@@ -3,7 +3,10 @@ const axios = require('axios');
 const cron = require('node-cron');
 const { getPool } = require('../config/db');
 
-const GOV_FUEL_URL = 'https://www.gov.uk/guidance/access-fuel-price-data';
+// UK Gov fuel price data sources
+// E5 = Premium Petrol (95 RON) -> petrol_price
+// B7 = Diesel -> diesel_price
+// E10 = Standard Petrol (E10) -> e10_price
 const BRANDS = [
   { name: 'Applegreen', url: 'https://applegreenstores.com/fuel-prices/data.json' },
   { name: 'Ascona', url: 'https://fuelprices.asconagroup.co.uk/newfuel.json' },
@@ -41,6 +44,14 @@ async function syncFuelData() {
     const data = await fetchBrand(brand);
     for (const station of data.stations) {
       try {
+        // UK Gov Open Data price codes:
+        // E5  = Premium Petrol (RON95 E5)  -> stored as petrol_price
+        // B7  = Diesel (B7)                -> stored as diesel_price
+        // E10 = Standard Petrol (E10)      -> stored as e10_price
+        const petrolPrice = station.prices?.E5  ? station.prices.E5  / 10 : null;
+        const dieselPrice = station.prices?.B7  ? station.prices.B7  / 10 : null;
+        const e10Price    = station.prices?.E10 ? station.prices.E10 / 10 : null;
+
         await pool.query(
           `INSERT INTO stations (id, brand, name, address, postcode, lat, lng,
             petrol_price, diesel_price, e10_price, last_updated)
@@ -56,16 +67,16 @@ async function syncFuelData() {
             station.brand || data.brand,
             station.address || '',
             station.postcode || '',
-            parseFloat(station.location?.latitude || station.lat || 0),
+            parseFloat(station.location?.latitude  || station.lat || 0),
             parseFloat(station.location?.longitude || station.lng || 0),
-            station.prices?.E10 ? station.prices.E10 / 10 : null,
-            station.prices?.B7 ? station.prices.B7 / 10 : null,
-            station.prices?.E5 ? station.prices.E5 / 10 : null
+            petrolPrice,
+            dieselPrice,
+            e10Price
           ]
         );
         totalUpserted++;
       } catch (e) {
-        // skip bad records
+        // skip bad records silently
       }
     }
   }
