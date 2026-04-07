@@ -7,7 +7,8 @@ const { loadSecrets } = require('./config/secrets');
 const { initPool } = require('./config/db');
 const healthRouter = require('./routes/health');
 const stationsRouter = require('./routes/stations');
-const { errorHandler } = require('./middleware/errorHandler');
+const metaRouter = require('./routes/meta');
+const errorHandler = require('./middleware/errorHandler');
 const { scheduleFuelSync } = require('./services/govFuelData');
 
 const PORT = process.env.PORT || 3000;
@@ -22,8 +23,21 @@ async function start() {
   app.use(cors({ origin: '*' }));
   app.use(express.json());
 
+  // Health check - exactly /health (no prefix)
   app.use('/health', healthRouter);
-  app.use('/stations', stationsRouter);
+
+  // API v1 routes
+  app.use('/api/v1/stations', stationsRouter);
+  app.use('/api/v1/meta', metaRouter);
+
+  // Status endpoint
+  app.get('/api/v1/status', (req, res) => {
+    res.json({
+      status: 'ok',
+      version: '4.0.0',
+      timestamp: new Date().toISOString()
+    });
+  });
 
   app.use(errorHandler);
 
