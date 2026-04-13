@@ -13,6 +13,7 @@ const pricesRouter = require('./routes/prices');
 const alertsRouter = require('./routes/alerts');
 const favouritesRouter = require('./routes/favourites');
 const errorHandler = require('./middleware/errorHandler');
+const { generalLimiter } = require('./middleware/rateLimiter');
 const { scheduleFuelSync } = require('./services/govFuelData');
 const { startIngestRunner } = require('./jobs/ingestRunner');
 const { startAlertJob } = require('./jobs/alertJob');
@@ -34,6 +35,9 @@ async function start() {
   // Health check - exactly /health (no prefix)
   app.use('/health', healthRouter);
 
+  // Apply rate limiter to all API v1 routes
+  app.use('/api/v1', generalLimiter);
+
   // API v1 routes
   app.use('/api/v1/stations', stationsRouter);
   app.use('/api/v1/meta', metaRouter);
@@ -45,7 +49,7 @@ async function start() {
   app.get('/api/v1/status', (req, res) => {
     res.json({
       status: 'ok',
-      version: '5.0.0',
+      version: '6.0.0',
       timestamp: new Date().toISOString()
     });
   });
@@ -53,7 +57,7 @@ async function start() {
   app.use(errorHandler);
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`FreeFuelPrice API v5.0.0 listening on port ${PORT}`);
+    console.log(`FreeFuelPrice API v6.0.0 listening on port ${PORT}`);
     scheduleFuelSync();
     startIngestRunner();
     startAlertJob();
