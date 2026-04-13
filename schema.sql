@@ -26,6 +26,11 @@ CREATE INDEX IF NOT EXISTS idx_stations_last_updated ON stations(last_updated);
 -- Index on brand
 CREATE INDEX IF NOT EXISTS idx_stations_brand ON stations(brand);
 
+-- Index on petrol price (for cheapest queries)
+CREATE INDEX IF NOT EXISTS idx_stations_petrol ON stations(petrol_price ASC) WHERE petrol_price IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_stations_diesel ON stations(diesel_price ASC) WHERE diesel_price IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_stations_e10 ON stations(e10_price ASC) WHERE e10_price IS NOT NULL;
+
 -- Trigger to auto-update location from lat/lng
 CREATE OR REPLACE FUNCTION update_station_location()
 RETURNS TRIGGER AS $$
@@ -47,22 +52,46 @@ CREATE TRIGGER trigger_update_location
 CREATE TABLE IF NOT EXISTS price_history (
   id           BIGSERIAL PRIMARY KEY,
   station_id   VARCHAR(50) NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
-  petrol_price DECIMAL(5, 1),
-  diesel_price DECIMAL(5, 1),
-  e10_price    DECIMAL(5, 1),
+  fuel_type    VARCHAR(10) NOT NULL,
+  price_pence  DECIMAL(5, 1),
   recorded_at  TIMESTAMP NOT NULL DEFAULT date_trunc('hour', NOW())
 );
 
--- Unique constraint: one snapshot per station per hour
+-- Unique constraint: one snapshot per station per fuel per hour
 ALTER TABLE price_history
-  DROP CONSTRAINT IF EXISTS uq_price_history_station_hour;
+  DROP CONSTRAINT IF EXISTS uq_price_history_station_fuel_hour;
 ALTER TABLE price_history
-  ADD CONSTRAINT uq_price_history_station_hour
-  UNIQUE (station_id, recorded_at);
+  ADD CONSTRAINT uq_price_history_station_fuel_hour
+  UNIQUE (station_id, fuel_type, recorded_at);
 
--- Index for fast history lookups by station
+-- Index for fast history lookups
 CREATE INDEX IF NOT EXISTS idx_price_history_station_id
   ON price_history(station_id, recorded_at DESC);
 
--- Retention: automatically delete history older than 90 days
--- (managed by application-level cleanup job in Sprint 3)
+-- Sprint 3: Price alerts table
+CREATE TABLE IF NOT EXISTS price_alerts (
+  id                BIGSERIAL PRIMARY KEY,
+  station_id        VARCHAR(50) NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
+  fuel_type         VARCHAR(10) NOT NULL,
+  threshold_pence   DECIMAL(5, 1) NOT NULL,
+  device_token      VARCHAR(500) NOT NULL,
+  platform          VARCHAR(20) NOT NULL DEFAULT 'unknown',
+  active            BOOLEAN NOT NULL DEFAULT true,
+  last_notified_at  TIMESTAMP,
+  created_at        TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at        TIMESTAMP
+);
+
+-- Unique: one alert per station/fuel/device combo
+ALTER TABLE price_alerts
+  DROP CONSTRAINT IF EXISTS uq_alerts_station_fuel_device;
+ALTER TABLE price_alerts
+  ADD CONSTRAINT uq_alerts_station_fuel_device
+  UNIQUE (station_id, fuel_type, device_token);
+
+-- Indexes for alert lookups
+CREATE INDEX IF NOT EXISTS idx_alerts_device_token ON price_alerts(device_token) WHERE active = true;
+CREATE INDEX IF NOT EXISTS idx_alerts_station_fuel ON price_alerts(station_id, fuel_type) WHERE active = true;
+
+-- Sprint 3: Retention comment
+-- price_history older than 90 days is purged by the nightly cleanup job (src/jobs/retentionJob.js)
