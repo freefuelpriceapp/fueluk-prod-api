@@ -42,3 +42,27 @@ CREATE TRIGGER trigger_update_location
   BEFORE INSERT OR UPDATE ON stations
   FOR EACH ROW
   EXECUTE FUNCTION update_station_location();
+
+-- Sprint 2: Price history table for trend data
+CREATE TABLE IF NOT EXISTS price_history (
+  id           BIGSERIAL PRIMARY KEY,
+  station_id   VARCHAR(50) NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
+  petrol_price DECIMAL(5, 1),
+  diesel_price DECIMAL(5, 1),
+  e10_price    DECIMAL(5, 1),
+  recorded_at  TIMESTAMP NOT NULL DEFAULT date_trunc('hour', NOW())
+);
+
+-- Unique constraint: one snapshot per station per hour
+ALTER TABLE price_history
+  DROP CONSTRAINT IF EXISTS uq_price_history_station_hour;
+ALTER TABLE price_history
+  ADD CONSTRAINT uq_price_history_station_hour
+  UNIQUE (station_id, recorded_at);
+
+-- Index for fast history lookups by station
+CREATE INDEX IF NOT EXISTS idx_price_history_station_id
+  ON price_history(station_id, recorded_at DESC);
+
+-- Retention: automatically delete history older than 90 days
+-- (managed by application-level cleanup job in Sprint 3)
