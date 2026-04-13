@@ -3,39 +3,35 @@ const { syncFuelData } = require('./govFuelData');
 const { getPool } = require('../config/db');
 
 /**
- * ingestService.js — Sprint 2
+ * ingestService.js — Sprint 2 + Sprint 4 update
  * Orchestrates the full ingest cycle:
  *   1. Pull latest prices from all brand endpoints (govFuelData)
- *   2. Snapshot changed prices into price_history for trend data
+ *   2. Snapshot changed prices into price_history (fuel_type/price_pence rows)
  *
  * Called by ingestRunner (cron) and optionally by an admin trigger endpoint.
  */
 
 /**
  * snapshotPriceHistory
- * After each sync, insert a price_history row for every station where
- * any price differs from the last recorded snapshot.
- * Uses INSERT ... ON CONFLICT DO NOTHING to avoid duplicates within
- * the same hour (rounded bucket).
+ * After each sync, insert one price_history row per station per fuel type
+ * where that fuel has a price. Uses INSERT ... ON CONFLICT DO NOTHING to
+ * avoid duplicates within the same hour bucket.
+ * Schema: (station_id, fuel_type, price_pence, recorded_at)
  */
 async function snapshotPriceHistory() {
   const pool = getPool();
   const result = await pool.query(`
-    INSERT INTO price_history (station_id, petrol_price, diesel_price, e10_price, recorded_at)
-    SELECT
-      s.id,
-      s.petrol_price,
-      s.diesel_price,
-      s.e10_price,
-      date_trunc('hour', NOW()) AS recorded_at
+    INSERT INTO price_history (station_id, fuel_type, price_pence, recorded_at)
+    SELECT s.id, v.fuel_type, v.price_pence, date_trunc('hour', NOW()) AS recorded_at
     FROM stations s
-    WHERE s.petrol_price IS NOT NULL
-      OR s.diesel_price IS NOT NULL
-      OR s.e10_price IS NOT NULL
-    ON CONFLICT (station_id, recorded_at) DO UPDATE
-      SET petrol_price = EXCLUDED.petrol_price,
-          diesel_price = EXCLUDED.diesel_price,
-          e10_price    = EXCLUDED.e10_price
+    CROSS JOIN LATERAL (
+      VALUES
+        ('petrol', s.petrol_price),
+        ('diesel', s.diesel_price),
+        ('e10',    s.e10_price)
+    ) AS v(fuel_type, price_pence)
+    WHERE v.price_pence IS NOT NULL
+    ON CONFLICT (station_id, fuel_type, recorded_at) DO NOTHING
   `);
   return result.rowCount;
 }
