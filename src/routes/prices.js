@@ -6,7 +6,7 @@ const { isEnabled } = require('../utils/featureFlags');
 const { runNow } = require('../jobs/ingestRunner');
 
 /**
- * prices.js — Sprint 2
+ * prices.js — Sprint 2 + Sprint 4 update
  * Routes:
  *   GET  /api/v1/prices/:stationId/history   — price trend for a station
  *   POST /api/v1/prices/ingest               — admin trigger (feature-flagged)
@@ -16,8 +16,10 @@ const { runNow } = require('../jobs/ingestRunner');
  * GET /api/v1/prices/:stationId/history
  * Returns hourly price snapshots for a given station.
  * Query params:
- *   days   (default 7)  — how many days of history to return
+ *   days   (default 7)  — how many days of history to return (max 90)
  *   fuel   (default all) — filter to petrol | diesel | e10
+ * Response shape:
+ *   { stationId, days, fuel, count, history: [{recorded_at, fuel_type, price_pence}] }
  */
 router.get('/:stationId/history', async (req, res, next) => {
   try {
@@ -27,19 +29,29 @@ router.get('/:stationId/history', async (req, res, next) => {
 
     const { stationId } = req.params;
     const days = Math.min(parseInt(req.query.days ?? '7', 10), 90);
+    const fuel = req.query.fuel || null; // petrol | diesel | e10 | null (all)
 
     const pool = getPool();
+
+    // Build query — optionally filter by fuel_type
+    const params = [stationId, days];
+    let fuelFilter = '';
+    if (fuel && ['petrol', 'diesel', 'e10'].includes(fuel)) {
+      fuelFilter = ' AND fuel_type = $3';
+      params.push(fuel);
+    }
+
     const result = await pool.query(
       `SELECT
          recorded_at,
-         petrol_price,
-         diesel_price,
-         e10_price
+         fuel_type,
+         price_pence
        FROM price_history
        WHERE station_id = $1
          AND recorded_at >= NOW() - INTERVAL '1 day' * $2
-       ORDER BY recorded_at ASC`,
-      [stationId, days]
+         ${fuelFilter}
+       ORDER BY recorded_at ASC, fuel_type ASC`,
+      params
     );
 
     if (result.rows.length === 0) {
@@ -52,6 +64,7 @@ router.get('/:stationId/history', async (req, res, next) => {
     return res.json({
       stationId,
       days,
+      fuel: fuel || 'all',
       count: result.rows.length,
       history: result.rows,
     });
