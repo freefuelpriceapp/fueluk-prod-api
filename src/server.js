@@ -9,8 +9,10 @@ const { runMigrations } = require('./config/migrate');
 const healthRouter = require('./routes/health');
 const stationsRouter = require('./routes/stations');
 const metaRouter = require('./routes/meta');
+const pricesRouter = require('./routes/prices');
 const errorHandler = require('./middleware/errorHandler');
 const { scheduleFuelSync } = require('./services/govFuelData');
+const { startIngestRunner } = require('./jobs/ingestRunner');
 
 const PORT = process.env.PORT || 3000;
 
@@ -31,6 +33,7 @@ async function start() {
   // API v1 routes
   app.use('/api/v1/stations', stationsRouter);
   app.use('/api/v1/meta', metaRouter);
+  app.use('/api/v1/prices', pricesRouter);
 
   // Status endpoint
   app.get('/api/v1/status', (req, res) => {
@@ -46,6 +49,7 @@ async function start() {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`FreeFuelPrice API v4.0.0 listening on port ${PORT}`);
     scheduleFuelSync();
+    startIngestRunner();
   });
 }
 
