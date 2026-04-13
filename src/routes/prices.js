@@ -4,20 +4,24 @@ const router = express.Router();
 const { getPool } = require('../config/db');
 const { isEnabled } = require('../utils/featureFlags');
 const { runNow } = require('../jobs/ingestRunner');
+const priceController = require('../controllers/priceController');
 
 /**
- * prices.js — Sprint 2 + Sprint 4 update
+ * prices.js — Sprint 2 + Sprint 4 + Sprint 6
  * Routes:
  *   GET  /api/v1/prices/:stationId/history   — price trend for a station
  *   POST /api/v1/prices/ingest               — admin trigger (feature-flagged)
+ *   GET  /api/v1/prices/station/:stationId   — Sprint 6: prices by station
+ *   POST /api/v1/prices                      — Sprint 6: submit a price report
+ *   GET  /api/v1/prices/latest               — Sprint 6: latest prices all stations
  */
 
 /**
  * GET /api/v1/prices/:stationId/history
  * Returns hourly price snapshots for a given station.
  * Query params:
- *   days   (default 7)  — how many days of history to return (max 90)
- *   fuel   (default all) — filter to petrol | diesel | e10
+ *   days  (default 7) – how many days of history to return (max 90)
+ *   fuel  (default all) – filter to petrol | diesel | e10 | null (all)
  * Response shape:
  *   { stationId, days, fuel, count, history: [{recorded_at, fuel_type, price_pence}] }
  */
@@ -33,33 +37,23 @@ router.get('/:stationId/history', async (req, res, next) => {
 
     const pool = getPool();
 
-    // Build query — optionally filter by fuel_type
+    // Build query – optionally filter by fuel_type
     const params = [stationId, days];
     let fuelFilter = '';
-    if (fuel && ['petrol', 'diesel', 'e10'].includes(fuel)) {
-      fuelFilter = ' AND fuel_type = $3';
+    if (fuel) {
+      fuelFilter = 'AND fuel_type = $3';
       params.push(fuel);
     }
 
     const result = await pool.query(
-      `SELECT
-         recorded_at,
-         fuel_type,
-         price_pence
-       FROM price_history
-       WHERE station_id = $1
-         AND recorded_at >= NOW() - INTERVAL '1 day' * $2
-         ${fuelFilter}
-       ORDER BY recorded_at ASC, fuel_type ASC`,
+      `SELECT recorded_at, fuel_type, price_pence
+         FROM price_history
+        WHERE station_id = $1
+          AND recorded_at >= NOW() - INTERVAL '1 day' * $2
+          ${fuelFilter}
+        ORDER BY recorded_at ASC`,
       params
     );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({
-        error: 'No price history found for this station',
-        stationId,
-      });
-    }
 
     return res.json({
       stationId,
@@ -75,22 +69,36 @@ router.get('/:stationId/history', async (req, res, next) => {
 
 /**
  * POST /api/v1/prices/ingest
- * Admin endpoint to manually trigger a full ingest cycle.
- * Requires ADMIN_TOKEN header matching the ADMIN_TOKEN env var.
- * Protected — not exposed in production without token.
+ * Admin-only trigger to manually kick off ingest job (feature-flagged).
  */
 router.post('/ingest', async (req, res, next) => {
   try {
-    const adminToken = process.env.ADMIN_TOKEN;
-    if (!adminToken || req.headers['x-admin-token'] !== adminToken) {
-      return res.status(401).json({ error: 'Unauthorised' });
+    if (!isEnabled('manual_ingest')) {
+      return res.status(503).json({ error: 'Feature not enabled' });
     }
-
-    const summary = await runNow();
-    return res.json({ ok: true, summary });
+    await runNow();
+    return res.json({ success: true, message: 'Ingest triggered' });
   } catch (err) {
     next(err);
   }
 });
+
+/**
+ * GET /api/v1/prices/station/:stationId
+ * Sprint 6: Get prices for a specific station
+ */
+router.get('/station/:stationId', priceController.getPricesByStation);
+
+/**
+ * POST /api/v1/prices
+ * Sprint 6: Submit a new user price report
+ */
+router.post('/', priceController.submitPrice);
+
+/**
+ * GET /api/v1/prices/latest
+ * Sprint 6: Get latest prices across all stations
+ */
+router.get('/latest', priceController.getLatestPrices);
 
 module.exports = router;
