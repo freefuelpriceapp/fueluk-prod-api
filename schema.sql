@@ -95,3 +95,22 @@ CREATE INDEX IF NOT EXISTS idx_alerts_station_fuel ON price_alerts(station_id, f
 
 -- Sprint 3: Retention comment
 -- price_history older than 90 days is purged by the nightly cleanup job (src/jobs/retentionJob.js)
+
+-- Sprint 5: User favourites table (device-token scoped, no account required)
+CREATE TABLE IF NOT EXISTS user_favourites (
+  id           BIGSERIAL PRIMARY KEY,
+  device_token VARCHAR(500) NOT NULL,
+  station_id   VARCHAR(50) NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
+  created_at   TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Unique: one favourite per device per station
+ALTER TABLE user_favourites
+  DROP CONSTRAINT IF EXISTS uq_user_favourites_device_station;
+ALTER TABLE user_favourites
+  ADD CONSTRAINT uq_user_favourites_device_station
+  UNIQUE (device_token, station_id);
+
+-- Index for fast device lookups
+CREATE INDEX IF NOT EXISTS idx_user_favourites_device_token
+  ON user_favourites(device_token);
