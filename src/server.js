@@ -10,9 +10,12 @@ const healthRouter = require('./routes/health');
 const stationsRouter = require('./routes/stations');
 const metaRouter = require('./routes/meta');
 const pricesRouter = require('./routes/prices');
+const alertsRouter = require('./routes/alerts');
 const errorHandler = require('./middleware/errorHandler');
 const { scheduleFuelSync } = require('./services/govFuelData');
 const { startIngestRunner } = require('./jobs/ingestRunner');
+const { startAlertJob } = require('./jobs/alertJob');
+const { startRetentionJob } = require('./jobs/retentionJob');
 
 const PORT = process.env.PORT || 3000;
 
@@ -27,13 +30,14 @@ async function start() {
   app.use(cors({ origin: '*' }));
   app.use(express.json());
 
-  // Health check - exactly /health (no prefix)
+  // Health check — exactly /health (no prefix)
   app.use('/health', healthRouter);
 
   // API v1 routes
   app.use('/api/v1/stations', stationsRouter);
   app.use('/api/v1/meta', metaRouter);
   app.use('/api/v1/prices', pricesRouter);
+  app.use('/api/v1/alerts', alertsRouter);
 
   // Status endpoint
   app.get('/api/v1/status', (req, res) => {
@@ -50,6 +54,8 @@ async function start() {
     console.log(`FreeFuelPrice API v4.0.0 listening on port ${PORT}`);
     scheduleFuelSync();
     startIngestRunner();
+    startAlertJob();
+    startRetentionJob();
   });
 }
 
