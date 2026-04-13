@@ -5,6 +5,7 @@ const helmet = require('helmet');
 const compression = require('compression');
 const { loadSecrets } = require('./config/secrets');
 const { initPool } = require('./config/db');
+const { runMigrations } = require('./config/migrate');
 const healthRouter = require('./routes/health');
 const stationsRouter = require('./routes/stations');
 const metaRouter = require('./routes/meta');
@@ -16,6 +17,7 @@ const PORT = process.env.PORT || 3000;
 async function start() {
   await loadSecrets();
   await initPool();
+  await runMigrations();
 
   const app = express();
   app.use(helmet());
