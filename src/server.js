@@ -12,7 +12,9 @@ const metaRouter = require('./routes/meta');
 const pricesRouter = require('./routes/prices');
 const alertsRouter = require('./routes/alerts');
 const favouritesRouter = require('./routes/favourites');
+const premiumRouter = require('./routes/premiumRoutes');
 const errorHandler = require('./middleware/errorHandler');
+const notFound = require('./middleware/notFound');
 const { generalLimiter } = require('./middleware/rateLimiter');
 const { scheduleFuelSync } = require('./services/govFuelData');
 const { startIngestRunner } = require('./jobs/ingestRunner');
@@ -44,20 +46,18 @@ async function start() {
   app.use('/api/v1/prices', pricesRouter);
   app.use('/api/v1/alerts', alertsRouter);
   app.use('/api/v1/favourites', favouritesRouter);
+  app.use('/api/v1/premium', premiumRouter);
 
-  // Status endpoint
-  app.get('/api/v1/status', (req, res) => {
-    res.json({
-      status: 'ok',
-      version: '6.0.0',
-      timestamp: new Date().toISOString()
-    });
-  });
+  // 404 handler (must be after all routes)
+  app.use(notFound);
 
+  // Error handler (must be last)
   app.use(errorHandler);
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`FreeFuelPrice API v6.0.0 listening on port ${PORT}`);
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+    
+    // Start background jobs
     scheduleFuelSync();
     startIngestRunner();
     startAlertJob();
@@ -66,6 +66,6 @@ async function start() {
 }
 
 start().catch(err => {
-  console.error('Fatal startup error:', err);
+  console.error('Failed to start server:', err);
   process.exit(1);
 });
