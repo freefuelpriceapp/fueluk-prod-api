@@ -8,51 +8,57 @@ Track each item before going live on the App Store and Google Play.
 ## 🔧 Backend API
 
 ### Infrastructure
-- [ ] ECS Fargate cluster is running (`fuelapp-prod-cluster`)
-- [ ] ECS service healthy (`fueluk-prod-service`)
-- [ ] RDS PostgreSQL instance running with PostGIS enabled
-- [ ] AWS Secrets Manager secret `fuelapp/prod/db` populated with all env vars
-- [ ] ECR repository exists and latest image pushed
+
+- [x] ECS Fargate cluster is running (`fuelapp-prod-cluster`)
+- [x] ECS service healthy (`fueluk-prod-service`)
+- [x] RDS PostgreSQL instance running with PostGIS enabled
+- [x] AWS Secrets Manager secret `fuelapp/prod/db` populated with all env vars
+- [x] ECR repository exists and latest image pushed
 - [ ] CodePipeline connected to GitHub `main` branch
-- [ ] ALB (Application Load Balancer) configured with HTTPS
-- [ ] ACM SSL certificate `*.freefuelpriceapp.com` issued and attached to ALB
-- [ ] Domain `api.freefuelpriceapp.com` pointing to ALB
+- [x] ALB (Application Load Balancer) configured with HTTPS
+- [x] ACM SSL certificate `*.freefuelpriceapp.com` issued and attached to ALB
+- [x] Domain `api.freefuelpriceapp.com` pointing to ALB
 
 ### API Health
-- [ ] `GET /health` returns `{ status: "ok", version: "9.0.0" }`
-- [ ] `GET /stations/nearby` returns stations within radius
+
+- [x] `GET /health` returns `{ status: "ok", version: "9.0.0" }`
+- [x] `GET /stations/nearby` returns stations within radius
 - [ ] `GET /prices` returns current fuel prices
 - [ ] `POST /device/register` registers device token successfully
 - [ ] `POST /notifications/subscribe` subscribes to price alerts
-- [ ] Rate limiting active (100 req/15min per IP)
+- [x] Rate limiting active (100 req/15min per IP)
 
 ### Database
-- [ ] All migrations applied (`node src/db/migrate.js`)
-- [ ] `stations` table populated with UK fuel stations
+
+- [x] All migrations applied (`node src/db/migrate.js`)
+- [x] `stations` table populated with UK fuel stations
 - [ ] `prices` table populated with current prices
-- [ ] PostGIS spatial indexes active
+- [x] PostGIS spatial indexes active
 - [ ] `premium_users` table created
 
 ### Security
-- [ ] JWT_SECRET set to strong random value
-- [ ] CORS configured to allow only app origins
-- [ ] Rate limiter enabled in production
-- [ ] No sensitive values in source code or logs
-- [ ] Helmet.js security headers enabled
+
+- [x] JWT_SECRET set to strong random value
+- [x] CORS configured to allow only app origins
+- [x] Rate limiter enabled in production
+- [x] No sensitive values in source code or logs
+- [x] Helmet.js security headers enabled
 
 ---
 
 ## 📱 Mobile App (iOS)
 
 ### Build & Configuration
+
 - [ ] `app.json` version set to `9.0.0`
 - [ ] `eas.json` configured for production build
 - [ ] Bundle identifier: `com.freefuelpriceapp.uk`
-- [ ] API base URL pointing to `https://api.freefuelpriceapp.com`
+- [x] API base URL pointing to `https://api.freefuelpriceapp.com`
 - [ ] Push notification entitlements configured
 - [ ] Location permissions strings set (NSLocationWhenInUseUsageDescription)
 
 ### App Store Submission
+
 - [ ] Apple Developer account active
 - [ ] App registered in App Store Connect
 - [ ] Production build created via `eas build --platform ios --profile production`
@@ -69,12 +75,14 @@ Track each item before going live on the App Store and Google Play.
 ## 🤖 Mobile App (Android)
 
 ### Build & Configuration
+
 - [ ] `app.json` Android package: `com.freefuelpriceapp.uk`
 - [ ] Keystore generated and stored securely
 - [ ] Google Maps API key configured (if used)
 - [ ] Location permissions declared in `app.json`
 
 ### Google Play Submission
+
 - [ ] Google Play Developer account active
 - [ ] App created in Google Play Console
 - [ ] Production build created via `eas build --platform android --profile production`
@@ -101,15 +109,15 @@ Track each item before going live on the App Store and Google Play.
 
 All features below must be `enabled: false` at launch unless MVP:
 
-- [ ] `ROUTE_AWARE_PRICING` — disabled (post-MVP)
-- [ ] `PREMIUM_SUBSCRIPTIONS` — disabled (post-MVP)
-- [ ] `PRICE_ALERTS` — disabled (post-MVP)
-- [ ] `FAVOURITE_STATIONS` — disabled (post-MVP)
-- [ ] `TRIP_COST_CALCULATOR` — disabled (post-MVP)
-- [ ] `COMMUNITY_REPORTS` — disabled (post-MVP)
-- [ ] Core station search — **ENABLED** (MVP)
-- [ ] Core price display — **ENABLED** (MVP)
-- [ ] Device registration — **ENABLED** (MVP)
+- `ROUTE_AWARE_PRICING` — disabled (post-MVP)
+- `PREMIUM_SUBSCRIPTIONS` — disabled (post-MVP)
+- `PRICE_ALERTS` — disabled (post-MVP)
+- `FAVOURITE_STATIONS` — disabled (post-MVP)
+- `TRIP_COST_CALCULATOR` — disabled (post-MVP)
+- `COMMUNITY_REPORTS` — disabled (post-MVP)
+- [x] Core station search — ENABLED (MVP)
+- [x] Core price display — ENABLED (MVP)
+- [x] Device registration — ENABLED (MVP)
 
 ---
 
@@ -126,17 +134,16 @@ All features below must be `enabled: false` at launch unless MVP:
 ## 🚀 Go / No-Go Sign-Off
 
 | Area | Status | Owner |
-|------|--------|-------|
-| Backend API | ❓ Pending | Dev |
+| Backend API | ✅ Infrastructure live, API healthy | Dev |
 | iOS App | ❓ Pending | Dev |
 | Android App | ❓ Pending | Dev |
-| Database | ❓ Pending | Dev |
+| Database | ✅ Connected, stations populated | Dev |
 | Monitoring | ❓ Pending | Dev |
 | Legal | ❓ Pending | Founder |
 | App Store | ❓ Pending | Founder |
 
-**Launch Date Target**: TBD
+Launch Date Target: TBD
 
 ---
 
-*Last updated: Sprint 9 — Domain corrected to freefuelpriceapp.com, bundle IDs updated*
+Last updated: Sprint 9 — Backend API verified live ✅ (api.freefuelpriceapp.com healthy, db connected, 2842+ stations, task def rev 17)
