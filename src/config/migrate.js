@@ -174,6 +174,24 @@ async function runMigrations() {
   await pool.query(
     "CREATE INDEX IF NOT EXISTS idx_premium_users_expires_at ON premium_users(expires_at) WHERE tier <> 'free';"
   );
+  
+  // Sprint 6: Price reports table (user-submitted prices)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS price_reports (
+      id          BIGSERIAL PRIMARY KEY,
+      station_id  VARCHAR(50) NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
+      fuel_type   VARCHAR(20) NOT NULL,
+      price_pence DECIMAL(5, 1) NOT NULL,
+      source      VARCHAR(20) NOT NULL DEFAULT 'user',
+      reported_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_price_reports_station ON price_reports(station_id);'
+  );
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_price_reports_reported_at ON price_reports(reported_at);'
+  );
   console.log('DB migrations complete.');
 }
 
