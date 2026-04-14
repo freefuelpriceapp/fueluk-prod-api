@@ -8,12 +8,20 @@ const stationRepository = require('../repositories/stationRepository');
  * Handles geospatial queries, search orchestration, and station detail assembly.
  */
 
+const MILES_TO_KM = 1.60934;
+
 /**
  * Get stations near a given lat/lng within radius miles.
  * Applies fuel type filter if provided.
  */
 async function getNearbyStations({ lat, lon, radius = 5, fuelType }) {
-  const stations = await stationRepository.getNearbyStations({ lat, lon, radius, fuelType });
+  const radiusKm = parseFloat(radius) * MILES_TO_KM;
+  const stations = await stationRepository.getNearbyStations({
+    lat,
+    lng: lon,
+    radiusKm,
+    fuel: fuelType || 'petrol',
+  });
   return stations.map(formatStation);
 }
 
@@ -40,7 +48,14 @@ async function getStationById(id) {
  * Used for route-aware recommendations (future: route intelligence).
  */
 async function getCheapestNearby({ lat, lon, radius = 10, fuelType = 'petrol', limit = 5 }) {
-  const stations = await stationRepository.getCheapestNearby({ lat, lon, radius, fuelType, limit });
+  const radiusKm = parseFloat(radius) * MILES_TO_KM;
+  const stations = await stationRepository.getNearbyStations({
+    lat,
+    lng: lon,
+    radiusKm,
+    fuel: fuelType,
+    limit,
+  });
   return stations.map(formatStation);
 }
 
@@ -60,13 +75,8 @@ function formatStation(row) {
     diesel_price: row.diesel_price ? parseFloat(row.diesel_price) : null,
     e10_price: row.e10_price ? parseFloat(row.e10_price) : null,
     last_updated: row.last_updated || null,
-    distance_miles: row.distance_miles ? parseFloat(row.distance_miles) : null,
+    distance_miles: row.distance_m ? parseFloat((row.distance_m / 1609.34).toFixed(2)) : null,
   };
 }
 
-module.exports = {
-  getNearbyStations,
-  searchStations,
-  getStationById,
-  getCheapestNearby,
-};
+module.exports = { getNearbyStations, searchStations, getStationById, getCheapestNearby };
