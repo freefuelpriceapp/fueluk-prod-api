@@ -105,7 +105,7 @@ Track each item before going live on the App Store and Google Play.
 - [ ] CloudWatch Alarm for high latency (p99 > 2s)
 - [x] CloudWatch Alarm for ECS high CPU (`fueluk-prod-ecs-cpu-high` — CPU > 80%)
 - [ ] Uptime monitor configured (e.g. UptimeRobot or AWS Route53 health check)
-- [x] Error alerting to email configured (SNS topic: FuelApp-Prod-Alerts → refurb792696@gmail.com)
+- [x] Error alerting to email configured (SNS topic: FuelApp-Prod-Alerts → refurb79@gmail.com)
 
 ---
 
