@@ -100,6 +100,80 @@ async function runMigrations() {
     'CREATE INDEX IF NOT EXISTS idx_price_history_recorded_at ON price_history(recorded_at);'
   );
 
+
+    // Sprint 3: Price alerts table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS price_alerts (
+      id                BIGSERIAL PRIMARY KEY,
+      station_id        VARCHAR(50) NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
+      fuel_type         VARCHAR(10) NOT NULL,
+      threshold_pence   DECIMAL(5, 1) NOT NULL,
+      device_token      VARCHAR(500) NOT NULL,
+      platform          VARCHAR(20) NOT NULL DEFAULT 'unknown',
+      active            BOOLEAN NOT NULL DEFAULT true,
+      last_notified_at  TIMESTAMP,
+      created_at        TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at        TIMESTAMP
+    );
+  `);
+  await pool.query(`
+    ALTER TABLE price_alerts
+      DROP CONSTRAINT IF EXISTS uq_alerts_station_fuel_device;
+  `);
+  await pool.query(`
+    ALTER TABLE price_alerts
+      ADD CONSTRAINT uq_alerts_station_fuel_device
+      UNIQUE (station_id, fuel_type, device_token);
+  `);
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_alerts_device_token ON price_alerts(device_token) WHERE active = true;'
+  );
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_alerts_station_fuel ON price_alerts(station_id, fuel_type) WHERE active = true;'
+  );
+
+  // Sprint 5: User favourites table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS user_favourites (
+      id           BIGSERIAL PRIMARY KEY,
+      device_token VARCHAR(500) NOT NULL,
+      station_id   VARCHAR(50) NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
+      created_at   TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query(`
+    ALTER TABLE user_favourites
+      DROP CONSTRAINT IF EXISTS uq_user_favourites_device_station;
+  `);
+  await pool.query(`
+    ALTER TABLE user_favourites
+      ADD CONSTRAINT uq_user_favourites_device_station
+      UNIQUE (device_token, station_id);
+  `);
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_user_favourites_device_token ON user_favourites(device_token);'
+  );
+
+  // Sprint 7: Premium users table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS premium_users (
+      id              BIGSERIAL PRIMARY KEY,
+      device_token    VARCHAR(500) NOT NULL UNIQUE,
+      tier            VARCHAR(20)  NOT NULL DEFAULT 'free',
+      subscribed_at   TIMESTAMP,
+      expires_at      TIMESTAMP,
+      receipt_token   VARCHAR(1000),
+      platform        VARCHAR(20)  NOT NULL DEFAULT 'unknown',
+      created_at      TIMESTAMP    NOT NULL DEFAULT NOW(),
+      updated_at      TIMESTAMP    NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_premium_users_device_token ON premium_users(device_token);'
+  );
+  await pool.query(
+    "CREATE INDEX IF NOT EXISTS idx_premium_users_expires_at ON premium_users(expires_at) WHERE tier <> 'free';"
+  );
   console.log('DB migrations complete.');
 }
 
