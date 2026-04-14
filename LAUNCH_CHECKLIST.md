@@ -8,15 +8,15 @@ Track each item before going live on the App Store and Google Play.
 ## 🔧 Backend API
 
 ### Infrastructure
-- [ ] ECS Fargate cluster is running (`fueluk-prod-cluster`)
-- [ ] ECS service healthy (`fueluk-prod-api-service`)
+- [ ] ECS Fargate cluster is running (`fuelapp-prod-cluster`)
+- [ ] ECS service healthy (`fueluk-prod-service`)
 - [ ] RDS PostgreSQL instance running with PostGIS enabled
-- [ ] AWS Secrets Manager secret `fueluk-prod-api` populated with all env vars
+- [ ] AWS Secrets Manager secret `fuelapp/prod/db` populated with all env vars
 - [ ] ECR repository exists and latest image pushed
 - [ ] CodePipeline connected to GitHub `main` branch
 - [ ] ALB (Application Load Balancer) configured with HTTPS
-- [ ] ACM SSL certificate issued and attached to ALB
-- [ ] Domain `api.freefuelprice.co.uk` pointing to ALB
+- [ ] ACM SSL certificate `*.freefuelpriceapp.com` issued and attached to ALB
+- [ ] Domain `api.freefuelpriceapp.com` pointing to ALB
 
 ### API Health
 - [ ] `GET /health` returns `{ status: "ok", version: "9.0.0" }`
@@ -47,8 +47,8 @@ Track each item before going live on the App Store and Google Play.
 ### Build & Configuration
 - [ ] `app.json` version set to `9.0.0`
 - [ ] `eas.json` configured for production build
-- [ ] Bundle identifier: `com.freefuelprice.app`
-- [ ] API base URL pointing to `https://api.freefuelprice.co.uk`
+- [ ] Bundle identifier: `com.freefuelpriceapp.uk`
+- [ ] API base URL pointing to `https://api.freefuelpriceapp.com`
 - [ ] Push notification entitlements configured
 - [ ] Location permissions strings set (NSLocationWhenInUseUsageDescription)
 
@@ -69,7 +69,7 @@ Track each item before going live on the App Store and Google Play.
 ## 🤖 Mobile App (Android)
 
 ### Build & Configuration
-- [ ] `app.json` Android package: `com.freefuelprice.app`
+- [ ] `app.json` Android package: `com.freefuelpriceapp.uk`
 - [ ] Keystore generated and stored securely
 - [ ] Google Maps API key configured (if used)
 - [ ] Location permissions declared in `app.json`
@@ -139,4 +139,4 @@ All features below must be `enabled: false` at launch unless MVP:
 
 ---
 
-*Last updated: Sprint 9*
+*Last updated: Sprint 9 — Domain corrected to freefuelpriceapp.com, bundle IDs updated*
