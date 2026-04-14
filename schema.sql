@@ -114,3 +114,24 @@ ALTER TABLE user_favourites
 -- Index for fast device lookups
 CREATE INDEX IF NOT EXISTS idx_user_favourites_device_token
   ON user_favourites(device_token);
+
+-- Sprint 7: Premium users table (device-token scoped subscription tier)
+CREATE TABLE IF NOT EXISTS premium_users (
+  id              BIGSERIAL PRIMARY KEY,
+  device_token    VARCHAR(500) NOT NULL UNIQUE,
+  tier            VARCHAR(20)  NOT NULL DEFAULT 'free',
+  subscribed_at   TIMESTAMP,
+  expires_at      TIMESTAMP,
+  receipt_token   VARCHAR(1000),
+  platform        VARCHAR(20)  NOT NULL DEFAULT 'unknown',
+  created_at      TIMESTAMP    NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMP    NOT NULL DEFAULT NOW()
+);
+
+-- Index for fast device token lookups
+CREATE INDEX IF NOT EXISTS idx_premium_users_device_token
+  ON premium_users(device_token);
+
+-- Index for expiry checks (background job)
+CREATE INDEX IF NOT EXISTS idx_premium_users_expires_at
+  ON premium_users(expires_at) WHERE tier <> 'free';
