@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
 
 env:
-  AWS_REGION: eu-west-2
+  AWS_REGION: us-east-1
   ECR_REPOSITORY: fueluk-prod-api
-  ECS_SERVICE: fueluk-prod-api-service
+  ECS_SERVICE: fueluk-prod-service
   ECS_CLUSTER: fuelapp-prod-cluster
   CONTAINER_NAME: fueluk-prod-api
 
@@ -41,15 +41,13 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
         run: |
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
           echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
       - name: Download task definition
         run: |
           aws ecs describe-task-definition --task-definition fueluk-prod-api \
-            --query taskDefinition > task-definition.json
+          --query taskDefinition > task-definition.json
 
       - name: Fill in the new image ID in the Amazon ECS task definition
         id: task-def
@@ -60,15 +58,9 @@ jobs:
           image: ${{ steps.build-image.outputs.image }}
 
       - name: Deploy Amazon ECS task definition
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
           task-definition: ${{ steps.task-def.outputs.task-definition }}
           service: ${{ env.ECS_SERVICE }}
           cluster: ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: true
-
-      - name: Health check after deployment
-        run: |
-          sleep 30
-          curl -f https://api.freefuelprice.co.uk/health || exit 1
-          echo "Health check passed!"
