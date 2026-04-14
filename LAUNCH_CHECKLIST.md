@@ -101,11 +101,11 @@ Track each item before going live on the App Store and Google Play.
 ## 📊 Monitoring & Observability
 
 - [ ] CloudWatch Log Group `/ecs/fueluk-prod-api` active
-- [ ] CloudWatch Alarm for high error rate (5xx > 5%)
+- [x] CloudWatch Alarm for high error rate (`fueluk-prod-5xx-errors` — 5xx > 0)
 - [ ] CloudWatch Alarm for high latency (p99 > 2s)
-- [ ] CloudWatch Alarm for ECS service unhealthy tasks
+- [x] CloudWatch Alarm for ECS high CPU (`fueluk-prod-ecs-cpu-high` — CPU > 80%)
 - [ ] Uptime monitor configured (e.g. UptimeRobot or AWS Route53 health check)
-- [ ] Error alerting to email/Slack configured
+- [x] Error alerting to email configured (SNS topic: FuelApp-Prod-Alerts → refurb792696@gmail.com)
 
 ---
 
@@ -143,7 +143,7 @@ All features below must be `enabled: false` at launch unless MVP:
 | iOS App | 🟡 Config verified, build not yet triggered | Dev |
 | Android App | 🟡 Config verified, build not yet triggered | Dev |
 | Database | ✅ Connected, 2842+ stations populated | Dev |
-| Monitoring | ❓ Pending setup | Dev |
+| Monitoring | 🟡 2 alarms created (5xx errors, ECS CPU); uptime monitor pending | Dev |
 | Legal | ❓ Pending | Founder |
 | App Store | ❓ Pending | Founder |
 
@@ -151,4 +151,4 @@ Launch Date Target: TBD
 
 ---
 
-Last updated: Sprint 9 — Backend API verified live ✅ | Mobile app config verified 🟡 | Next: CodePipeline, CloudWatch alarms, app store submission
+Last updated: Sprint 9 — Backend API ✅ | Mobile config ✅ | CloudWatch alarms ✅ (fueluk-prod-5xx-errors, fueluk-prod-ecs-cpu-high) | Next: Uptime monitor, app store submission
