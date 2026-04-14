@@ -34,7 +34,7 @@ GitHub (main branch)
 
 ## Environment Variables
 
-All secrets are stored in **AWS Secrets Manager** under the secret name `fueluk-prod-api`.
+All secrets are stored in **AWS Secrets Manager** under the secret name `fuelapp/prod/db`.
 
 | Variable | Description |
 |----------|-------------|
@@ -91,12 +91,12 @@ docker run -p 3000:3000 --env-file .env fueluk-prod-api
 
 ```bash
 # Authenticate Docker with ECR
-aws ecr get-login-password --region eu-west-2 | \
-  docker login --username AWS --password-stdin <ACCOUNT_ID>.dkr.ecr.eu-west-2.amazonaws.com
+aws ecr get-login-password --region us-east-1 | \
+  docker login --username AWS --password-stdin <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com
 
 # Tag and push image
-docker tag fueluk-prod-api:latest <ACCOUNT_ID>.dkr.ecr.eu-west-2.amazonaws.com/fueluk-prod-api:latest
-docker push <ACCOUNT_ID>.dkr.ecr.eu-west-2.amazonaws.com/fueluk-prod-api:latest
+docker tag fueluk-prod-api:latest <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/fueluk-prod-api:latest
+docker push <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/fueluk-prod-api:latest
 ```
 
 ### 2. CodePipeline
@@ -116,10 +116,10 @@ Stages:
 
 ### 3. ECS Fargate
 
-- **Cluster**: `fueluk-prod-cluster`
-- **Service**: `fueluk-prod-api-service`
+- **Cluster**: `fuelapp-prod-cluster`
+- **Service**: `fueluk-prod-service`
 - **Task Definition**: `fueluk-prod-api`
-- **Region**: `eu-west-2` (London)
+- **Region**: `us-east-1` (N. Virginia)
 - **CPU/Memory**: 256 CPU / 512 MB (scalable)
 
 ---
@@ -160,7 +160,7 @@ Expected response:
 
 To roll back to a previous deployment:
 
-1. Navigate to ECS → Services → `fueluk-prod-api-service`
+1. Navigate to ECS → Services → `fueluk-prod-service`
 2. Click **Update service**
 3. Select previous task definition revision
 4. Click **Update**
@@ -168,8 +168,8 @@ To roll back to a previous deployment:
 Or via CLI:
 ```bash
 aws ecs update-service \
-  --cluster fueluk-prod-cluster \
-  --service fueluk-prod-api-service \
+  --cluster fuelapp-prod-cluster \
+  --service fueluk-prod-service \
   --task-definition fueluk-prod-api:<PREVIOUS_REVISION>
 ```
 
@@ -185,9 +185,10 @@ aws ecs update-service \
 
 ## Domain & SSL
 
-- **Domain**: `api.freefuelprice.co.uk`
-- **SSL**: AWS ACM certificate (auto-renewing)
-- **Load Balancer**: ALB with HTTPS listener (port 443) → HTTP target (port 3000)
+- **Domain**: `api.freefuelpriceapp.com`
+- **SSL**: AWS ACM certificate `*.freefuelpriceapp.com` (auto-renewing, already issued)
+- **Load Balancer**: ALB `fueluk-prod-alb` with HTTPS listener (port 443) → HTTP target (port 3000)
+- **DNS**: CNAME `api.freefuelpriceapp.com` → `fueluk-prod-alb-739489501.us-east-1.elb.amazonaws.com`
 
 ---
 
@@ -199,4 +200,4 @@ Adjust in `src/middleware/rateLimiter.js` if required.
 
 ---
 
-*Last updated: Sprint 9*
+*Last updated: Sprint 9 — Domain corrected to freefuelpriceapp.com*
