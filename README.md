@@ -12,7 +12,7 @@
 
 This is the production backend API for FreeFuelPrice UK. It ingests live fuel price data from major UK supermarket and fuel brand feeds, stores it in a PostGIS-enabled PostgreSQL database, and exposes a RESTful API consumed by the mobile app.
 
-**API Base URL:** `https://api.freefuelprice.co.uk`
+**API Base URL:** `https://api.freefuelpriceapp.com`
 
 ---
 
