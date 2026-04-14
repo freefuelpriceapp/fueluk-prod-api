@@ -39,6 +39,7 @@ async function syncFuelData() {
   console.log('Starting Gov UK fuel data sync...');
   const pool = getPool();
   let totalUpserted = 0;
+  const errors = [];
 
   for (const brand of BRANDS) {
     const data = await fetchBrand(brand);
@@ -76,11 +77,12 @@ async function syncFuelData() {
         );
         totalUpserted++;
       } catch (e) {
-        // skip bad records silently
+        errors.push({ brand: data.brand, message: e.message });
       }
     }
   }
   console.log(`Fuel sync complete: ${totalUpserted} stations upserted`);
+  return { totalUpserted, errors };
 }
 
 function scheduleFuelSync() {
