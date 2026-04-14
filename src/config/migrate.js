@@ -68,6 +68,38 @@ async function runMigrations() {
     EXECUTE FUNCTION update_station_location();
   `);
 
+    // Sprint 2: Price history table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS price_history (
+      id          BIGSERIAL PRIMARY KEY,
+      station_id  VARCHAR(50) NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
+      fuel_type   VARCHAR(10) NOT NULL,
+      price_pence DECIMAL(5, 1),
+      recorded_at TIMESTAMP NOT NULL DEFAULT date_trunc('hour', NOW())
+    );
+  `);
+
+  // Unique constraint: one snapshot per station per fuel per hour
+  await pool.query(`
+    ALTER TABLE price_history
+      DROP CONSTRAINT IF EXISTS uq_price_history_station_fuel_hour;
+  `);
+  await pool.query(`
+    ALTER TABLE price_history
+      ADD CONSTRAINT uq_price_history_station_fuel_hour
+      UNIQUE (station_id, fuel_type, recorded_at);
+  `);
+
+  // Index for fast lookups by station
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_price_history_station ON price_history(station_id);'
+  );
+
+  // Index for time-based queries
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_price_history_recorded_at ON price_history(recorded_at);'
+  );
+
   console.log('DB migrations complete.');
 }
 
