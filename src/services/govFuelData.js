@@ -3,31 +3,38 @@ const axios = require('axios');
 const cron = require('node-cron');
 const { getPool } = require('../config/db');
 
-// UK Gov fuel price data sources
+// UK Gov fuel price data sources (CMA Open Data scheme)
 // E5 = Premium Petrol (95 RON) -> petrol_price
 // B7 = Diesel -> diesel_price
 // E10 = Standard Petrol (E10) -> e10_price
+//
+// Note: Some brand URLs block requests without a browser-like User-Agent (BP, Tesco).
+// Shell serves HTML not JSON — excluded. Co-op DNS defunct — excluded.
+
+const USER_AGENT = 'Mozilla/5.0 (compatible; FreeFuelPriceApp/9.0; +https://freefuelprice.co.uk)';
+
 const BRANDS = [
   { name: 'Applegreen', url: 'https://applegreenstores.com/fuel-prices/data.json' },
   { name: 'Ascona', url: 'https://fuelprices.asconagroup.co.uk/newfuel.json' },
   { name: 'Asda', url: 'https://storelocator.asda.com/fuel_prices_data.json' },
   { name: 'BP', url: 'https://www.bp.com/en_gb/united-kingdom/home/fuelprices/fuel_prices_data.json' },
-  { name: 'Co-op', url: 'https://fuel.coop.co.uk/fuel_prices_data.json' },
-  { name: 'Esso', url: 'https://fuelprices.esso.co.uk/fuel_prices_data.json' },
+  { name: 'Esso', url: 'https://fuelprices.esso.co.uk/latestdata.json' },
   { name: 'JET', url: 'https://jetlocal.co.uk/fuel_prices_data.json' },
   { name: 'Morrisons', url: 'https://www.morrisons.com/fuel-prices/fuel.json' },
-  { name: 'Moto', url: 'https://www.moto-way.com/fuel-price/fuel_prices_data.json' },
+  { name: 'Moto', url: 'https://www.moto-way.com/fuel-price/fuel_prices.json' },
   { name: 'Motor Fuel Group', url: 'https://fuel.motorfuelgroup.com/fuel_prices_data.json' },
   { name: 'Rontec', url: 'https://www.rontec-servicestations.co.uk/fuel-prices/data/fuel_prices_data.json' },
   { name: 'Sainsburys', url: 'https://api.sainsburys.co.uk/v1/exports/latest/fuel_prices_data.json' },
   { name: 'SGN', url: 'https://www.sgnretail.uk/files/data/SGN_daily_fuel_prices.json' },
-  { name: 'Shell', url: 'https://www.shell.co.uk/motorist/oils-and-lubricants/shell-fuels-locator/_jcr_content/root/main/section/simple_list/list_par/content_box/links.multi.fuel_prices_data.json' },
   { name: 'Tesco', url: 'https://www.tesco.com/fuel_prices/fuel_prices_data.json' },
 ];
 
 async function fetchBrand(brand) {
   try {
-    const resp = await axios.get(brand.url, { timeout: 10000 });
+    const resp = await axios.get(brand.url, {
+      timeout: 10000,
+      headers: { 'User-Agent': USER_AGENT },
+    });
     return { brand: brand.name, stations: resp.data.stations || [] };
   } catch (err) {
     console.warn(`Failed to fetch ${brand.name}:`, err.message);
