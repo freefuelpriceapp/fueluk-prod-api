@@ -1,4 +1,4 @@
-'use strict';
+'use strict'; const { version } = require('../../package.json');
 const router = require('express').Router();
 const { getPool } = require('../config/db');
 
@@ -13,7 +13,8 @@ router.get('/', async (req, res) => {
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
-    version: '4.0.0',
+    version,
+        uptime_seconds: Math.floor(process.uptime()),
     db: dbStatus
   });
 });
