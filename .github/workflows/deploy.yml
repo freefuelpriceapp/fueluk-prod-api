@@ -11,7 +11,7 @@ env:
   ECR_REPOSITORY: fueluk-prod-api
   ECS_SERVICE: fueluk-prod-service
   ECS_CLUSTER: fuelapp-prod-cluster
-    CONTAINER_NAME: fueluk-api
+  CONTAINER_NAME: fueluk-api
 
 jobs:
   deploy:
