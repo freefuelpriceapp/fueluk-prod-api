@@ -183,4 +183,4 @@ When starting a new Comet session:
 
 ---
 
-Last updated: Sprint 9 — Backend v9.0.0 | Mobile v9.0.0
+Last updated: Sprint 10 – Backend v9.0.0 | Mobile v9.0.0 | Sprint 1 closure ✅ | Settings/trust wiring ✅ | Maintainer docs current ✅
