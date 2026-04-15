@@ -104,7 +104,7 @@ Track each item before going live on the App Store and Google Play.
 - [x] CloudWatch Alarm for high error rate (`fueluk-prod-5xx-errors` — 5xx > 0)
 - [x] CloudWatch Alarm for high latency (p99 > 2s) (`fueluk-prod-alb-p99-latency-high` — p99 > 2s)
 - [x] CloudWatch Alarm for ECS high CPU (`fueluk-prod-ecs-cpu-high` — CPU > 80%)
-- [ ] Uptime monitor configured (e.g. UptimeRobot or AWS Route53 health check)
+- [x] Uptime monitor configured (e.g. UptimeRobot or AWS Route53 health check)
 - [x] Error alerting to email configured (SNS topic: FuelApp-Prod-Alerts → refurb79@gmail.com)
 
 ---
@@ -143,7 +143,7 @@ All features below must be `enabled: false` at launch unless MVP:
 | iOS App | 🟡 Config verified, build not yet triggered | Dev |
 | Android App | 🟡 Config verified, build not yet triggered | Dev |
 | Database | ✅ Connected, 2842+ stations populated | Dev |
-| Monitoring | 🟡 3 alarms created (5xx errors, ECS CPU, p99 latency); Log Group active; uptime monitor pending | Dev |
+| Monitoring | ✅ CloudWatch alarms (5xx, ECS-CPU, p99) ✅ | Log Group ✅ | CodePipeline ✅ | Uptime monitor (Route53) ✅ | Dev |
 | Legal | ❓ Pending | Founder |
 | App Store | ❓ Pending | Founder |
 
@@ -151,4 +151,4 @@ Launch Date Target: TBD
 
 ---
 
-Last updated: Sprint 9 — Backend API ✅ | Mobile config ✅ | CloudWatch alarms ✅ (5xx-errors, ECS-CPU, p99-latency) | Log Group ✅ | CodePipeline ✅ | Next: Uptime monitor, app store submission(5xx-errors, ECS-CPU, p99-latency) | Log Group ✅ | Next: C
+Last updated: Sprint 9 — Backend API ✅ | Mobile config ✅ | CloudWatch alarms ✅ | Log Group ✅ | CodePipeline ✅ | Uptime monitor (Route53) ✅ | Next: app store submission
