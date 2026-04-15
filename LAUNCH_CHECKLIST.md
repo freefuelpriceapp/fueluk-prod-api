@@ -14,7 +14,7 @@ Track each item before going live on the App Store and Google Play.
 - [x] RDS PostgreSQL instance running with PostGIS enabled
 - [x] AWS Secrets Manager secret `fuelapp/prod/db` populated with all env vars
 - [x] ECR repository exists and latest image pushed
-- [ ] CodePipeline connected to GitHub `main` branch
+- [x] CodePipeline connected to GitHub `main` branch
 - [x] ALB (Application Load Balancer) configured with HTTPS
 - [x] ACM SSL certificate `*.freefuelpriceapp.com` issued and attached to ALB
 - [x] Domain `api.freefuelpriceapp.com` pointing to ALB
@@ -139,7 +139,7 @@ All features below must be `enabled: false` at launch unless MVP:
 
 | Area | Status | Owner |
 |------|--------|-------|
-| Backend API | ✅ Infrastructure live, API healthy, DB connected | Dev |
+| Backend API | ✅ Infrastructure live, API healthy, DB connected , CodePipeline ✅| Dev |
 | iOS App | 🟡 Config verified, build not yet triggered | Dev |
 | Android App | 🟡 Config verified, build not yet triggered | Dev |
 | Database | ✅ Connected, 2842+ stations populated | Dev |
@@ -151,4 +151,4 @@ Launch Date Target: TBD
 
 ---
 
-Last updated: Sprint 9 — Backend API ✅ | Mobile config ✅ | CloudWatch alarms ✅ (5xx-errors, ECS-CPU, p99-latency) | Log Group ✅ | Next: CodePipeline, Uptime monitor, app store submission
+Last updated: Sprint 9 — Backend API ✅ | Mobile config ✅ | CloudWatch alarms ✅ (5xx-errors, ECS-CPU, p99-latency) | Log Group ✅ | CodePipeline ✅ | Next: Uptime monitor, app store submission(5xx-errors, ECS-CPU, p99-latency) | Log Group ✅ | Next: C
