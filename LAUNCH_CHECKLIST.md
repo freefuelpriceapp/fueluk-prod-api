@@ -151,4 +151,4 @@ Launch Date Target: TBD
 
 ---
 
-Last updated: Sprint 9 — Backend API ✅ | Mobile config ✅ | CloudWatch alarms ✅ | Log Group ✅ | CodePipeline ✅ | Uptime monitor (Route53) ✅ | Next: app store submission
+Last updated: Sprint 10 – Sprint 1 closure ✅ | ECS deployment live ✅ | API verified (health, nearby, cheapest) ✅ | Feature flags MVP-safe ✅ | Mobile shell launch-safe ✅ | DB-backed, no mocks ✅ | Email corrected refurb79@gmail.com ✅ | Next: App Store / Google Play submission
