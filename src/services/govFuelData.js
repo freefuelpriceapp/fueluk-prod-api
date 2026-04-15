@@ -11,7 +11,7 @@ const { getPool } = require('../config/db');
 // Note: Some brand URLs block requests without a browser-like User-Agent (BP, Tesco).
 // Shell serves HTML not JSON — excluded. Co-op DNS defunct — excluded.
 
-const USER_AGENT = 'Mozilla/5.0 (compatible; FreeFuelPriceApp/9.0; +https://freefuelprice.co.uk)';
+const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 const BRANDS = [
   { name: 'Applegreen', url: 'https://applegreenstores.com/fuel-prices/data.json' },
