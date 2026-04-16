@@ -13,6 +13,7 @@ const pricesRouter = require('./routes/prices');
 const alertsRouter = require('./routes/alerts');
 const favouritesRouter = require('./routes/favourites');
 const premiumRouter = require('./routes/premiumRoutes');
+const pagesRouter = require('./routes/pages');
 const errorHandler = require('./middleware/errorHandler');
 const notFound = require('./middleware/notFound');
 const { generalLimiter } = require('./middleware/rateLimiter');
@@ -47,6 +48,9 @@ async function start() {
   app.use('/api/v1/alerts', alertsRouter);
   app.use('/api/v1/favourites', favouritesRouter);
   app.use('/api/v1/premium', premiumRouter);
+
+    // Public pages (privacy, support)
+  app.use(pagesRouter);
 
   // 404 handler (must be after all routes)
   app.use(notFound);
