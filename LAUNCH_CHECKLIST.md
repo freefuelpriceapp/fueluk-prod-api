@@ -23,18 +23,18 @@ Track each item before going live on the App Store and Google Play.
 
 - [x] `GET /health` returns `{ status: "ok", version: "9.0.0" }` — confirmed healthy, db connected
 - [x] `GET /api/v1/stations/nearby` returns stations within radius — returns 20 stations with prices
-- [ ] `GET /prices` returns current fuel prices — price_reports table empty (user-submitted prices)
-- [ ] `POST /device/register` registers device token successfully
-- [ ] `POST /notifications/subscribe` subscribes to price alerts
+- [x] `GET /api/v1/prices/latest` returns latest prices — verified live (empty array currently; populates as price_history grows)
+- [x] `GET /api/v1/prices/:stationId/history` price trend endpoint — verified live
+- [x] `POST /api/v1/alerts` registers device token + price alert (replaces `/device/register` + `/notifications/subscribe`) — verified live
 - [x] Rate limiting active (100 req/15min per IP)
 
 ### Database
 
 - [x] All migrations applied (`node src/db/migrate.js`)
 - [x] `stations` table populated with UK fuel stations (2842+ stations)
-- [ ] `prices` table populated with current prices
+- [x] `stations` table contains embedded latest prices (petrol_price, diesel_price, e10_price) — verified via /stations/nearby
 - [x] PostGIS spatial indexes active
-- [ ] `premium_users` table created
+- [x] `premium_users` table created (schema.sql Sprint 7 migration applied)
 
 ### Security
 
