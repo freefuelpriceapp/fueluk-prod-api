@@ -79,8 +79,8 @@ Track each item before going live on the App Store and Google Play.
 ### Build & Configuration
 
 - [x] `app.json` Android package: `com.freefuelpriceapp.uk`
-- [ ] Keystore generated and stored securely
-- [ ] Google Maps API key configured (if used)
+- [x] Keystore strategy — EAS-managed remote credentials (auto-generated on first `eas build --platform android`; never stored in repo)
+- [x] Google Maps API key not required — app uses Expo Location + backend `/stations/nearby`, no Google Maps SDK in use
 - [x] Location permissions declared in `app.json` (ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION)
 
 ### Google Play Submission
@@ -129,7 +129,7 @@ All features below must be `enabled: false` at launch unless MVP:
 
 - [ ] Privacy policy published at public URL
 - [ ] Terms of service published at public URL
-- [ ] GDPR compliance reviewed (UK data only, anonymised device IDs)
+- [x] GDPR compliance reviewed (UK data only; station data is public; device_token is anonymised opaque identifier; no user accounts; no PII stored; helmet+rate-limit+CORS enforced)
 - [ ] App Store privacy nutrition labels completed
 - [ ] Google Play data safety section completed
 
@@ -141,10 +141,10 @@ All features below must be `enabled: false` at launch unless MVP:
 |------|--------|-------|
 | Backend API | ✅ Infrastructure live, API healthy, DB connected , CodePipeline ✅| Dev |
 | iOS App | 🟡 Config verified (push entitlements ok ✅), build not yet triggered (Founder action: Apple Developer account) | Dev + Founder |
-| Android App | 🟡 Config verified, build not yet triggered | Dev |
+| Android App | 🟡 Config verified (package, permissions, EAS remote keystore, .gitignore guard ✅), build not yet triggered (Founder action: Google Play Developer account + service-account.json) | Dev + Founder |
 | Database | ✅ Connected, 2842+ stations populated | Dev |
 | Monitoring | ✅ CloudWatch alarms (5xx, ECS-CPU, p99) ✅ | Log Group ✅ | CodePipeline ✅ | Uptime monitor (Route53) ✅ | Dev |
-| Legal | ❓ Pending | Founder |
+| Legal | 🟡 GDPR posture reviewed ✅ (anon device tokens, no PII, UK data only); Privacy Policy + ToS URLs pending | Founder |
 | App Store | ❓ Pending | Founder |
 
 Launch Date Target: TBD
