@@ -54,7 +54,7 @@ Track each item before going live on the App Store and Google Play.
 - [x] `eas.json` configured for production build (development/preview/production profiles)
 - [x] Bundle identifier: `com.freefuelpriceapp.uk`
 - [x] API base URL pointing to `https://api.freefuelpriceapp.com`
-- [ ] Push notification entitlements configured
+- [x] Push notification entitlements configured (iOS UIBackgroundModes: remote-notification + expo-notifications plugin)
 - [x] Location permissions strings set (NSLocationWhenInUseUsageDescription)
 
 ### App Store Submission
@@ -140,7 +140,7 @@ All features below must be `enabled: false` at launch unless MVP:
 | Area | Status | Owner |
 |------|--------|-------|
 | Backend API | ✅ Infrastructure live, API healthy, DB connected , CodePipeline ✅| Dev |
-| iOS App | 🟡 Config verified, build not yet triggered | Dev |
+| iOS App | 🟡 Config verified (push entitlements ok ✅), build not yet triggered (Founder action: Apple Developer account) | Dev + Founder |
 | Android App | 🟡 Config verified, build not yet triggered | Dev |
 | Database | ✅ Connected, 2842+ stations populated | Dev |
 | Monitoring | ✅ CloudWatch alarms (5xx, ECS-CPU, p99) ✅ | Log Group ✅ | CodePipeline ✅ | Uptime monitor (Route53) ✅ | Dev |
