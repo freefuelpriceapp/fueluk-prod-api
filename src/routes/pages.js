@@ -53,7 +53,7 @@ const SUPPORT_HTML = `<!DOCTYPE html>
   <p><strong>Why does the app need my location?</strong><br>Location is used to show fuel stations near you. You can deny access and search manually.</p>
   <p><strong>Is the app free?</strong><br>Yes. Core features are free with no ads.</p>
   <h2>App Version</h2>
-  <p>Current version: 9.0.0</p>
+  <p>Current version: 1.0.0</p>
 </body>
 </html>`;
 
