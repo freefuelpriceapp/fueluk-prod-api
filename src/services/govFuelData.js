@@ -89,9 +89,9 @@ async function syncFuelData() {
             petrol_price, diesel_price, e10_price, last_updated)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())
            ON CONFLICT (id) DO UPDATE SET
-            petrol_price = EXCLUDED.petrol_price,
-            diesel_price = EXCLUDED.diesel_price,
-            e10_price = EXCLUDED.e10_price,
+                        petrol_price = COALESCE(EXCLUDED.petrol_price, stations.petrol_price),
+                        diesel_price = COALESCE(EXCLUDED.diesel_price, stations.diesel_price),
+                        e10_price = COALESCE(EXCLUDED.e10_price, stations.e10_price),
             last_updated = NOW()`,
           [
             station.site_id || station.id,
