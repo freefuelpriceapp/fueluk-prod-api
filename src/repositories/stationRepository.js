@@ -28,7 +28,7 @@ async function getNearbyStations({ lat, lng, radiusKm = 5, fuel = 'petrol', limi
   }
   const result = await pool.query(
     `SELECT id, brand, name, address, postcode, lat, lng,
-            petrol_price, diesel_price, e10_price, last_updated,
+            petrol_price, diesel_price, e10_price, petrol_source, diesel_source, e10_source, last_updated,
             ST_Distance(location::geography, ST_SetSRID(ST_MakePoint($2,$1),4326)::geography) AS distance_m
       FROM stations
       WHERE ST_DWithin(location::geography, ST_SetSRID(ST_MakePoint($2,$1),4326)::geography, $3)
@@ -50,7 +50,7 @@ async function searchStations({ query, fuelType, limit = 20 }) {
   else if (fuelType === 'e10') fuelFilter = 'AND e10_price IS NOT NULL';
   const result = await pool.query(
     `SELECT id, brand, name, address, postcode, lat, lng,
-            petrol_price, diesel_price, e10_price, last_updated
+            petrol_price, diesel_price, e10_price, petrol_source, diesel_source, e10_source, last_updated
       FROM stations
       WHERE (LOWER(name) LIKE LOWER($1)
           OR LOWER(address) LIKE LOWER($1)
@@ -81,7 +81,7 @@ async function searchStationsTokens({ tokens, fuelType, limit = 20 }) {
   const limitP = `$${params.length}`;
   const result = await pool.query(
     `SELECT id, brand, name, address, postcode, lat, lng,
-            petrol_price, diesel_price, e10_price, last_updated
+            petrol_price, diesel_price, e10_price, petrol_source, diesel_source, e10_source, last_updated
       FROM stations
       WHERE ${clauses} ${fuelFilter}
       ORDER BY name ASC
@@ -105,7 +105,7 @@ async function searchStationsSmart({ query, fuelType, limit = 20 }) {
     const district = full.split(' ')[0];
     const r = await pool.query(
       `SELECT id, brand, name, address, postcode, lat, lng,
-              petrol_price, diesel_price, e10_price, last_updated
+              petrol_price, diesel_price, e10_price, petrol_source, diesel_source, e10_source, last_updated
          FROM stations
         WHERE (UPPER(postcode) = $1
             OR REPLACE(UPPER(postcode),' ','') = $2
@@ -129,7 +129,7 @@ async function getStationById(id) {
   const pool = getPool();
   const result = await pool.query(
     `SELECT id, brand, name, address, postcode, lat, lng,
-        petrol_price, diesel_price, e10_price, last_updated
+        petrol_price, diesel_price, e10_price, petrol_source, diesel_source, e10_source, last_updated
       FROM stations WHERE id = $1`,
     [id]
   );
