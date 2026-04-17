@@ -135,3 +135,24 @@ CREATE INDEX IF NOT EXISTS idx_premium_users_device_token
 -- Index for expiry checks (background job)
 CREATE INDEX IF NOT EXISTS idx_premium_users_expires_at
   ON premium_users(expires_at) WHERE tier <> 'free';
+
+-- Sprint 13: Non-gov price sources for supplementary data
+CREATE TABLE IF NOT EXISTS non_gov_prices (
+  id            BIGSERIAL PRIMARY KEY,
+  station_id    VARCHAR(50) NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
+  fuel_type     VARCHAR(10) NOT NULL,
+  price_pence   DECIMAL(5, 1),
+  source        VARCHAR(100) NOT NULL,
+  scraped_at    TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Unique: one non-gov price per station per fuel type
+ALTER TABLE non_gov_prices
+  DROP CONSTRAINT IF EXISTS uq_non_gov_station_fuel;
+ALTER TABLE non_gov_prices
+  ADD CONSTRAINT uq_non_gov_station_fuel
+  UNIQUE (station_id, fuel_type);
+
+-- Index for fast lookups by station
+CREATE INDEX IF NOT EXISTS idx_non_gov_prices_station_id
+  ON non_gov_prices(station_id);
