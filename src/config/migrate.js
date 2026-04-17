@@ -192,6 +192,35 @@ async function runMigrations() {
   await pool.query(
     'CREATE INDEX IF NOT EXISTS idx_price_reports_reported_at ON price_reports(reported_at);'
   );
+
+    // Sprint 14: Add source columns to stations table (for gov vs scraped badge)
+  await pool.query(`ALTER TABLE stations ADD COLUMN IF NOT EXISTS petrol_source VARCHAR(30) DEFAULT NULL`);
+  await pool.query(`ALTER TABLE stations ADD COLUMN IF NOT EXISTS diesel_source VARCHAR(30) DEFAULT NULL`);
+  await pool.query(`ALTER TABLE stations ADD COLUMN IF NOT EXISTS e10_source VARCHAR(30) DEFAULT NULL`);
+
+  // Sprint 14: Non-gov prices attribution table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS non_gov_prices (
+      id          BIGSERIAL PRIMARY KEY,
+      station_id  VARCHAR(50) NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
+      fuel_type   VARCHAR(20) NOT NULL,
+      price_pence DECIMAL(5, 1),
+      source      VARCHAR(30) NOT NULL DEFAULT 'scraped',
+      scraped_at  TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query(`
+    ALTER TABLE non_gov_prices
+      DROP CONSTRAINT IF EXISTS uq_non_gov_prices_station_fuel;
+  `);
+  await pool.query(`
+    ALTER TABLE non_gov_prices
+      ADD CONSTRAINT uq_non_gov_prices_station_fuel
+      UNIQUE (station_id, fuel_type);
+  `);
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_non_gov_prices_station ON non_gov_prices(station_id);'
+  );
   console.log('DB migrations complete.');
 }
 
