@@ -5,17 +5,17 @@ const stationService = require('../services/stationService');
 /**
  * stationController.js
  * HTTP controller layer for station endpoints.
- * Validates input, delegates to stationService, returns typed JSON responses.
- * Sprint 8 — refactored to use stationService instead of direct repository access.
+ * Sprint 8 — refactored to use stationService.
+ * Sprint 12 — added brand filter + getBrands endpoint.
  */
 
 /**
  * GET /api/v1/stations/nearby
- * Query params: lat, lon, radius (miles, default 5), fuel_type
+ * Query params: lat, lon, radius (miles, default 5), fuel_type, brand
  */
 async function getNearby(req, res, next) {
   try {
-    const { lat, lon, radius = 5, fuel_type } = req.query;
+    const { lat, lon, radius = 5, fuel_type, brand } = req.query;
 
     if (!lat || !lon) {
       return res.status(400).json({
@@ -42,6 +42,7 @@ async function getNearby(req, res, next) {
       lon: lonNum,
       radius: radiusNum,
       fuelType: fuel_type || null,
+      brand: brand || null,
     });
 
     return res.json({
@@ -49,6 +50,19 @@ async function getNearby(req, res, next) {
       count: stations.length,
       stations,
     });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * GET /api/v1/stations/brands
+ * Returns list of distinct fuel station brands.
+ */
+async function getBrands(req, res, next) {
+  try {
+    const brands = await stationService.getDistinctBrands();
+    return res.json({ success: true, brands });
   } catch (err) {
     next(err);
   }
@@ -88,34 +102,18 @@ async function search(req, res, next) {
 
 /**
  * GET /api/v1/stations/:id
- * Returns full station detail with current prices.
  */
 async function getById(req, res, next) {
   try {
     const { id } = req.params;
-
     if (!id) {
-      return res.status(400).json({
-        success: false,
-        error: 'Bad request',
-        message: 'Station ID is required',
-      });
+      return res.status(400).json({ success: false, error: 'Bad request', message: 'Station ID is required' });
     }
-
     const station = await stationService.getStationById(id);
-
     if (!station) {
-      return res.status(404).json({
-        success: false,
-        error: 'Not found',
-        message: `Station ${id} not found`,
-      });
+      return res.status(404).json({ success: false, error: 'Not found', message: `Station ${id} not found` });
     }
-
-    return res.json({
-      success: true,
-      station,
-    });
+    return res.json({ success: true, station });
   } catch (err) {
     next(err);
   }
@@ -123,21 +121,13 @@ async function getById(req, res, next) {
 
 /**
  * GET /api/v1/stations/cheapest
- * Query params: lat, lon, radius, fuel_type, limit
- * Returns cheapest stations by fuel type near a location.
  */
 async function getCheapest(req, res, next) {
   try {
     const { lat, lon, radius = 10, fuel_type = 'petrol', limit = 5 } = req.query;
-
     if (!lat || !lon) {
-      return res.status(400).json({
-        success: false,
-        error: 'Bad request',
-        message: 'lat and lon are required',
-      });
+      return res.status(400).json({ success: false, error: 'Bad request', message: 'lat and lon are required' });
     }
-
     const stations = await stationService.getCheapestNearby({
       lat: parseFloat(lat),
       lon: parseFloat(lon),
@@ -145,12 +135,7 @@ async function getCheapest(req, res, next) {
       fuelType: fuel_type,
       limit: Math.min(parseInt(limit, 10) || 5, 20),
     });
-
-    return res.json({
-      success: true,
-      count: stations.length,
-      stations,
-    });
+    return res.json({ success: true, count: stations.length, stations });
   } catch (err) {
     next(err);
   }
@@ -158,6 +143,7 @@ async function getCheapest(req, res, next) {
 
 module.exports = {
   getNearby,
+  getBrands,
   search,
   getById,
   getCheapest,
