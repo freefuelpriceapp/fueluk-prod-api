@@ -32,9 +32,9 @@ async function getNearbyStations({ lat, lng, radiusKm = 5, fuel = 'petrol', limi
             ST_Distance(location::geography, ST_SetSRID(ST_MakePoint($2,$1),4326)::geography) AS distance_m
       FROM stations
       WHERE ST_DWithin(location::geography, ST_SetSRID(ST_MakePoint($2,$1),4326)::geography, $3)
-        AND ${fuelCol} IS NOT NULL
+                -- Show ALL stations (never hide a station for missing price)
         ${brandFilter}
-      ORDER BY ${fuelCol} ASC, distance_m ASC
+            ORDER BY ${fuelCol} ASC NULLS LAST, distance_m ASC
       LIMIT $4`,
     params
   );
