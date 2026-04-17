@@ -86,12 +86,15 @@ async function syncFuelData() {
 
         await pool.query(
           `INSERT INTO stations (id, brand, name, address, postcode, lat, lng,
-            petrol_price, diesel_price, e10_price, last_updated)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())
+                        petrol_price, diesel_price, e10_price, petrol_source, diesel_source, e10_source, last_updated)
+                      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())
            ON CONFLICT (id) DO UPDATE SET
                         petrol_price = COALESCE(EXCLUDED.petrol_price, stations.petrol_price),
                         diesel_price = COALESCE(EXCLUDED.diesel_price, stations.diesel_price),
                         e10_price = COALESCE(EXCLUDED.e10_price, stations.e10_price),
+                                                petrol_source = CASE WHEN EXCLUDED.petrol_price IS NOT NULL THEN 'gov' ELSE stations.petrol_source END,
+                        diesel_source = CASE WHEN EXCLUDED.diesel_price IS NOT NULL THEN 'gov' ELSE stations.diesel_source END,
+                        e10_source = CASE WHEN EXCLUDED.e10_price IS NOT NULL THEN 'gov' ELSE stations.e10_source END,
             last_updated = NOW()`,
           [
             station.site_id || station.id,
@@ -103,7 +106,10 @@ async function syncFuelData() {
             parseFloat(station.location?.longitude || station.lng || 0),
             petrolPrice,
             dieselPrice,
-            e10Price
+            e10Price,
+                        petrolPrice ? 'gov' : null,
+            dieselPrice ? 'gov' : null,
+            e10Price ? 'gov' : null
           ]
         );
         totalUpserted++;
