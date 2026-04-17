@@ -5,63 +5,114 @@ const stationRepository = require('../repositories/stationRepository');
 /**
  * stationService.js
  * Business logic layer between stationController and stationRepository.
- * Handles geospatial queries, search orchestration, and station detail assembly.
+ * Handles geospatial queries, smart search orchestration (postcode geocoding,
+ * multi-token AND matching, place-name fallback), and station detail assembly.
  */
 
 const MILES_TO_KM = 1.60934;
+const DEFAULT_SEARCH_RADIUS_KM = 16;
 
-/**
- * Get stations near a given lat/lng within radius miles.
- * Applies fuel type filter if provided.
- */
+const UK_FULL_POSTCODE_RE = /\b(GIR\s*0AA|[A-PR-UWYZ]([0-9]{1,2}|[A-HK-Y][0-9]|[A-HK-Y][0-9]([0-9]|[ABEHMNPRV-Y]))\s*[0-9][ABD-HJLNP-UW-Z]{2})\b/i;
+const UK_OUTCODE_RE = /\b([A-PR-UWYZ]([0-9]{1,2}|[A-HK-Y][0-9]|[A-HK-Y][0-9]([0-9]|[ABEHMNPRV-Y])))\b/i;
+
 async function getNearbyStations({ lat, lon, radius = 5, fuelType }) {
   const radiusKm = parseFloat(radius) * MILES_TO_KM;
   const stations = await stationRepository.getNearbyStations({
-    lat,
-    lng: lon,
-    radiusKm,
-    fuel: fuelType || 'petrol',
+    lat, lng: lon, radiusKm, fuel: fuelType || 'petrol',
   });
   return stations.map(formatStation);
 }
 
-/**
- * Search stations by postcode, town, or place name.
- * Falls back to a name/postcode ILIKE match.
- */
 async function searchStations({ query, fuelType, limit = 20 }) {
-  const stations = await stationRepository.searchStations({ query, fuelType, limit });
-  return stations.map(formatStation);
+  const raw = (query || '').trim();
+  if (!raw) return [];
+
+  const full = raw.match(UK_FULL_POSTCODE_RE);
+  if (full) {
+    const geo = await geocodePostcode(full[0]);
+    if (geo) return nearbyFromPoint(geo, fuelType, limit);
+  }
+
+  const out = raw.match(UK_OUTCODE_RE);
+  if (out && out[0].length <= 4) {
+    const geo = await geocodeOutcode(out[0]);
+    if (geo) return nearbyFromPoint(geo, fuelType, limit);
+  }
+
+  const tokens = raw.split(/\s+/).filter(t => t.length >= 2).slice(0, 5);
+  if (tokens.length && typeof stationRepository.searchStationsTokens === 'function') {
+    const rows = await stationRepository.searchStationsTokens({ tokens, fuelType, limit });
+    if (rows && rows.length) return rows.map(formatStation);
+  }
+
+  const place = await geocodePlace(raw);
+  if (place) return nearbyFromPoint(place, fuelType, limit);
+
+  const legacy = await stationRepository.searchStations({ query: raw, fuelType, limit });
+  return (legacy || []).map(formatStation);
 }
 
-/**
- * Get a single station by ID with full price detail.
- */
 async function getStationById(id) {
   const station = await stationRepository.getStationById(id);
   if (!station) return null;
   return formatStation(station);
 }
 
-/**
- * Get the cheapest stations for a given fuel type near a location.
- * Used for route-aware recommendations (future: route intelligence).
- */
 async function getCheapestNearby({ lat, lon, radius = 10, fuelType = 'petrol', limit = 5 }) {
   const radiusKm = parseFloat(radius) * MILES_TO_KM;
   const stations = await stationRepository.getNearbyStations({
-    lat,
-    lng: lon,
-    radiusKm,
-    fuel: fuelType,
-    limit,
+    lat, lng: lon, radiusKm, fuel: fuelType, limit,
   });
   return stations.map(formatStation);
 }
 
-/**
- * Format a raw DB station row into a clean public API shape.
- */
+async function geocodePostcode(pc) {
+  const clean = pc.replace(/\s+/g, '').toUpperCase();
+  try {
+    const res = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(clean)}`);
+    if (!res.ok) return null;
+    const json = await res.json();
+    if (json && json.result && json.result.latitude != null) {
+      return { lat: json.result.latitude, lng: json.result.longitude, label: json.result.postcode };
+    }
+  } catch (_e) { /* ignore */ }
+  return null;
+}
+
+async function geocodeOutcode(outcode) {
+  const clean = outcode.replace(/\s+/g, '').toUpperCase();
+  try {
+    const res = await fetch(`https://api.postcodes.io/outcodes/${encodeURIComponent(clean)}`);
+    if (!res.ok) return null;
+    const json = await res.json();
+    if (json && json.result && json.result.latitude != null) {
+      return { lat: json.result.latitude, lng: json.result.longitude, label: json.result.outcode };
+    }
+  } catch (_e) { /* ignore */ }
+  return null;
+}
+
+async function geocodePlace(q) {
+  try {
+    const res = await fetch(`https://api.postcodes.io/places?q=${encodeURIComponent(q)}&limit=1`);
+    if (!res.ok) return null;
+    const json = await res.json();
+    const hit = json && json.result && json.result[0];
+    if (hit && hit.latitude != null) {
+      return { lat: hit.latitude, lng: hit.longitude, label: hit.name_1 };
+    }
+  } catch (_e) { /* ignore */ }
+  return null;
+}
+
+async function nearbyFromPoint({ lat, lng }, fuelType, limit) {
+  const stations = await stationRepository.getNearbyStations({
+    lat, lng, radiusKm: DEFAULT_SEARCH_RADIUS_KM,
+    fuel: fuelType || 'petrol', limit,
+  });
+  return stations.map(formatStation);
+}
+
 function formatStation(row) {
   return {
     id: row.id,
