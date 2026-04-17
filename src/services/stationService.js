@@ -131,6 +131,9 @@ function formatStation(row) {
     petrol_price: row.petrol_price ? parseFloat(row.petrol_price) : null,
     diesel_price: row.diesel_price ? parseFloat(row.diesel_price) : null,
     e10_price: row.e10_price ? parseFloat(row.e10_price) : null,
+        petrol_source: row.petrol_source || 'gov',
+    diesel_source: row.diesel_source || 'gov',
+    e10_source: row.e10_source || 'gov',
     last_updated: row.last_updated || null,
     distance_miles: row.distance_m ? parseFloat((row.distance_m / 1609.34).toFixed(2)) : null,
   };
