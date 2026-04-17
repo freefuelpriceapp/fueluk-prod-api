@@ -1,6 +1,7 @@
 'use strict';
 const { syncFuelData } = require('./govFuelData');
 const { getPool } = require('../config/db');
+const { fillMissingPrices } = require('./nonGovFuelData');
 
 /**
  * ingestService.js — Sprint 2 + Sprint 4 update
@@ -56,6 +57,16 @@ async function runFullIngest() {
     syncResult.errors.push({ phase: 'sync', message: err.message });
   }
 
+    // Step 1b: Fill missing prices from non-gov sources (e.g. PetrolMap scraping)
+  let fillResult = { filled: 0 };
+  try {
+    fillResult = await fillMissingPrices();
+    console.log(`[IngestService] fillMissingPrices complete – ${fillResult.filled} stations patched`);
+  } catch (err) {
+    console.error('[IngestService] fillMissingPrices failed:', err.message);
+    syncResult.errors.push({ phase: 'fillMissing', message: err.message });
+  }
+
   try {
     snapshotRows = await snapshotPriceHistory();
     console.log(`[IngestService] snapshotPriceHistory complete — ${snapshotRows} rows written`);
@@ -73,6 +84,7 @@ async function runFullIngest() {
     durationMs,
     stationsUpserted: syncResult.totalUpserted,
     historyRowsWritten: snapshotRows,
+        stationsPatched: fillResult.filled,
     errors: syncResult.errors,
   };
 
