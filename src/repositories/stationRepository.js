@@ -2,9 +2,8 @@
 const { getPool } = require('../config/db');
 
 /**
- * stationRepository.js — Sprint 1
+ * stationRepository.js — Sprint 1 + Sprint 10 search upgrade
  * All queries go through the pg Pool. No mock data.
- * Queries use the stations table schema (schema.sql).
  */
 
 async function getNearbyStations({ lat, lng, radiusKm = 5, fuel = 'petrol', limit = 20 }) {
@@ -29,13 +28,9 @@ async function searchStations({ query, fuelType, limit = 20 }) {
   const pool = getPool();
   const params = [`%${query}%`, limit];
   let fuelFilter = '';
-  if (fuelType === 'petrol') {
-    fuelFilter = 'AND petrol_price IS NOT NULL';
-  } else if (fuelType === 'diesel') {
-    fuelFilter = 'AND diesel_price IS NOT NULL';
-  } else if (fuelType === 'e10') {
-    fuelFilter = 'AND e10_price IS NOT NULL';
-  }
+  if (fuelType === 'petrol') fuelFilter = 'AND petrol_price IS NOT NULL';
+  else if (fuelType === 'diesel') fuelFilter = 'AND diesel_price IS NOT NULL';
+  else if (fuelType === 'e10') fuelFilter = 'AND e10_price IS NOT NULL';
   const result = await pool.query(
     `SELECT id, brand, name, address, postcode, lat, lng,
             petrol_price, diesel_price, e10_price, last_updated
@@ -47,6 +42,38 @@ async function searchStations({ query, fuelType, limit = 20 }) {
       ${fuelFilter}
       ORDER BY name ASC
       LIMIT $2`,
+    params
+  );
+  return result.rows;
+}
+
+/**
+ * Tokenised AND search: every token must appear in at least one of
+ * name/address/brand/postcode. Enables multi-word queries like
+ * 'Highgate Birmingham' to return sensibly ranked matches.
+ */
+async function searchStationsTokens({ tokens, fuelType, limit = 20 }) {
+  if (!tokens || !tokens.length) return [];
+  const pool = getPool();
+  const params = [];
+  const clauses = tokens.map((t, i) => {
+    params.push(`%${t.toLowerCase()}%`);
+    const p = `$${params.length}`;
+    return `(LOWER(name) LIKE ${p} OR LOWER(address) LIKE ${p} OR LOWER(brand) LIKE ${p} OR LOWER(postcode) LIKE ${p})`;
+  }).join(' AND ');
+  let fuelFilter = '';
+  if (fuelType === 'petrol') fuelFilter = 'AND petrol_price IS NOT NULL';
+  else if (fuelType === 'diesel') fuelFilter = 'AND diesel_price IS NOT NULL';
+  else if (fuelType === 'e10') fuelFilter = 'AND e10_price IS NOT NULL';
+  params.push(limit);
+  const limitP = `$${params.length}`;
+  const result = await pool.query(
+    `SELECT id, brand, name, address, postcode, lat, lng,
+            petrol_price, diesel_price, e10_price, last_updated
+      FROM stations
+      WHERE ${clauses} ${fuelFilter}
+      ORDER BY name ASC
+      LIMIT ${limitP}`,
     params
   );
   return result.rows;
@@ -71,4 +98,4 @@ async function getLastUpdated() {
   return result.rows[0];
 }
 
-module.exports = { getNearbyStations, searchStations, getStationById, getLastUpdated };
+module.exports = { getNearbyStations, searchStations, searchStationsTokens, getStationById, getLastUpdated };
