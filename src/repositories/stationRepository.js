@@ -2,7 +2,7 @@
 const { getPool } = require('../config/db');
 
 /**
- * stationRepository.js — Sprint 1 + Sprint 10 search upgrade + Sprint 11 smart search
+ * stationRepository.js — Sprint 1 + Sprint 10 search upgrade + Sprint 11 smart search + Sprint 12 brand filter
  * All queries go through the pg Pool. No mock data.
  */
 
@@ -16,10 +16,16 @@ function isPostcodeLike(s) {
   return /^[A-Z]{1,2}\d[A-Z\d]?\s*\d?[A-Z]{0,2}$/i.test(String(s).trim());
 }
 
-async function getNearbyStations({ lat, lng, radiusKm = 5, fuel = 'petrol', limit = 20 }) {
+async function getNearbyStations({ lat, lng, radiusKm = 5, fuel = 'petrol', limit = 20, brand = null }) {
   const pool = getPool();
   const radiusM = radiusKm * 1000;
   const fuelCol = fuel === 'diesel' ? 'diesel_price' : fuel === 'e10' ? 'e10_price' : 'petrol_price';
+  const params = [lat, lng, radiusM, limit];
+  let brandFilter = '';
+  if (brand) {
+    params.push(brand);
+    brandFilter = `AND LOWER(brand) = LOWER($${params.length})`;
+  }
   const result = await pool.query(
     `SELECT id, brand, name, address, postcode, lat, lng,
             petrol_price, diesel_price, e10_price, last_updated,
@@ -27,9 +33,10 @@ async function getNearbyStations({ lat, lng, radiusKm = 5, fuel = 'petrol', limi
       FROM stations
       WHERE ST_DWithin(location::geography, ST_SetSRID(ST_MakePoint($2,$1),4326)::geography, $3)
         AND ${fuelCol} IS NOT NULL
+        ${brandFilter}
       ORDER BY ${fuelCol} ASC, distance_m ASC
       LIMIT $4`,
-    [lat, lng, radiusM, limit]
+    params
   );
   return result.rows;
 }
@@ -129,6 +136,14 @@ async function getStationById(id) {
   return result.rows[0] || null;
 }
 
+async function getDistinctBrands() {
+  const pool = getPool();
+  const result = await pool.query(
+    `SELECT DISTINCT brand FROM stations WHERE brand IS NOT NULL AND brand != '' ORDER BY brand ASC`
+  );
+  return result.rows.map(r => r.brand);
+}
+
 async function getLastUpdated() {
   const pool = getPool();
   const result = await pool.query(
@@ -137,4 +152,4 @@ async function getLastUpdated() {
   return result.rows[0];
 }
 
-module.exports = { getNearbyStations, searchStations, searchStationsTokens, searchStationsSmart, getStationById, getLastUpdated, normalisePostcode, isPostcodeLike };
+module.exports = { getNearbyStations, searchStations, searchStationsTokens, searchStationsSmart, getStationById, getDistinctBrands, getLastUpdated, normalisePostcode, isPostcodeLike };
