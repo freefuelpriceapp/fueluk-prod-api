@@ -5,8 +5,7 @@ const stationRepository = require('../repositories/stationRepository');
 /**
  * stationService.js
  * Business logic layer between stationController and stationRepository.
- * Handles geospatial queries, smart search orchestration (postcode geocoding,
- * multi-token AND matching, place-name fallback), and station detail assembly.
+ * Sprint 12 - added brand filter + getDistinctBrands.
  */
 
 const MILES_TO_KM = 1.60934;
@@ -15,12 +14,19 @@ const DEFAULT_SEARCH_RADIUS_KM = 16;
 const UK_FULL_POSTCODE_RE = /\b(GIR\s*0AA|[A-PR-UWYZ]([0-9]{1,2}|[A-HK-Y][0-9]|[A-HK-Y][0-9]([0-9]|[ABEHMNPRV-Y]))\s*[0-9][ABD-HJLNP-UW-Z]{2})\b/i;
 const UK_OUTCODE_RE = /\b([A-PR-UWYZ]([0-9]{1,2}|[A-HK-Y][0-9]|[A-HK-Y][0-9]([0-9]|[ABEHMNPRV-Y])))\b/i;
 
-async function getNearbyStations({ lat, lon, radius = 5, fuelType }) {
+async function getNearbyStations({ lat, lon, radius = 5, fuelType, brand }) {
   const radiusKm = parseFloat(radius) * MILES_TO_KM;
   const stations = await stationRepository.getNearbyStations({
-    lat, lng: lon, radiusKm, fuel: fuelType || 'petrol',
+    lat, lng: lon, radiusKm, fuel: fuelType || 'petrol', brand: brand || null,
   });
   return stations.map(formatStation);
+}
+
+async function getDistinctBrands() {
+  if (typeof stationRepository.getDistinctBrands === 'function') {
+    return stationRepository.getDistinctBrands();
+  }
+  return [];
 }
 
 async function searchStations({ query, fuelType, limit = 20 }) {
@@ -130,4 +136,4 @@ function formatStation(row) {
   };
 }
 
-module.exports = { getNearbyStations, searchStations, getStationById, getCheapestNearby };
+module.exports = { getNearbyStations, getDistinctBrands, searchStations, getStationById, getCheapestNearby };
