@@ -13,6 +13,9 @@ CREATE TABLE IF NOT EXISTS stations (
   petrol_price DECIMAL(5, 1),
   diesel_price DECIMAL(5, 1),
   e10_price DECIMAL(5, 1),
+    petrol_source VARCHAR(20) DEFAULT 'gov',
+  diesel_source VARCHAR(20) DEFAULT 'gov',
+  e10_source VARCHAR(20) DEFAULT 'gov',
   last_updated TIMESTAMP DEFAULT NOW(),
   location GEOGRAPHY(POINT, 4326)
 );
@@ -156,3 +159,8 @@ ALTER TABLE non_gov_prices
 -- Index for fast lookups by station
 CREATE INDEX IF NOT EXISTS idx_non_gov_prices_station_id
   ON non_gov_prices(station_id);
+
+-- Sprint 14: Price source tracking (gov vs scraped)
+ALTER TABLE stations ADD COLUMN IF NOT EXISTS petrol_source VARCHAR(20) DEFAULT 'gov';
+ALTER TABLE stations ADD COLUMN IF NOT EXISTS diesel_source VARCHAR(20) DEFAULT 'gov';
+ALTER TABLE stations ADD COLUMN IF NOT EXISTS e10_source VARCHAR(20) DEFAULT 'gov';
