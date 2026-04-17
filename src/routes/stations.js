@@ -4,7 +4,7 @@ const stationController = require('../controllers/stationController');
 
 /**
  * GET /api/v1/stations/nearby
- * Query params: lat, lon, radius (km), fuel_type
+ * Query params: lat, lon, radius (km), fuel_type, brand
  */
 router.get('/nearby', stationController.getNearby);
 
@@ -13,6 +13,12 @@ router.get('/nearby', stationController.getNearby);
  * Query params: lat, lon, radius (km), fuel_type
  */
 router.get('/cheapest', stationController.getCheapest);
+
+/**
+ * GET /api/v1/stations/brands
+ * Returns distinct brand list for filter UI
+ */
+router.get('/brands', stationController.getBrands);
 
 /**
  * GET /api/v1/stations/search
