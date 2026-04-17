@@ -2,9 +2,19 @@
 const { getPool } = require('../config/db');
 
 /**
- * stationRepository.js — Sprint 1 + Sprint 10 search upgrade
+ * stationRepository.js — Sprint 1 + Sprint 10 search upgrade + Sprint 11 smart search
  * All queries go through the pg Pool. No mock data.
  */
+
+function normalisePostcode(s) {
+  const up = String(s).toUpperCase().replace(/\s+/g, '');
+  if (up.length > 3) return up.slice(0, up.length - 3) + ' ' + up.slice(-3);
+  return up;
+}
+
+function isPostcodeLike(s) {
+  return /^[A-Z]{1,2}\d[A-Z\d]?\s*\d?[A-Z]{0,2}$/i.test(String(s).trim());
+}
 
 async function getNearbyStations({ lat, lng, radiusKm = 5, fuel = 'petrol', limit = 20 }) {
   const pool = getPool();
@@ -47,16 +57,11 @@ async function searchStations({ query, fuelType, limit = 20 }) {
   return result.rows;
 }
 
-/**
- * Tokenised AND search: every token must appear in at least one of
- * name/address/brand/postcode. Enables multi-word queries like
- * 'Highgate Birmingham' to return sensibly ranked matches.
- */
 async function searchStationsTokens({ tokens, fuelType, limit = 20 }) {
   if (!tokens || !tokens.length) return [];
   const pool = getPool();
   const params = [];
-  const clauses = tokens.map((t, i) => {
+  const clauses = tokens.map((t) => {
     params.push(`%${t.toLowerCase()}%`);
     const p = `$${params.length}`;
     return `(LOWER(name) LIKE ${p} OR LOWER(address) LIKE ${p} OR LOWER(brand) LIKE ${p} OR LOWER(postcode) LIKE ${p})`;
@@ -79,6 +84,40 @@ async function searchStationsTokens({ tokens, fuelType, limit = 20 }) {
   return result.rows;
 }
 
+async function searchStationsSmart({ query, fuelType, limit = 20 }) {
+  const pool = getPool();
+  const raw = String(query || '').trim();
+  if (!raw) return [];
+  let fuelFilter = '';
+  if (fuelType === 'petrol') fuelFilter = 'AND petrol_price IS NOT NULL';
+  else if (fuelType === 'diesel') fuelFilter = 'AND diesel_price IS NOT NULL';
+  else if (fuelType === 'e10') fuelFilter = 'AND e10_price IS NOT NULL';
+  if (isPostcodeLike(raw)) {
+    const full = normalisePostcode(raw);
+    const compact = full.replace(/\s+/g, '');
+    const district = full.split(' ')[0];
+    const r = await pool.query(
+      `SELECT id, brand, name, address, postcode, lat, lng,
+              petrol_price, diesel_price, e10_price, last_updated
+         FROM stations
+        WHERE (UPPER(postcode) = $1
+            OR REPLACE(UPPER(postcode),' ','') = $2
+            OR UPPER(postcode) LIKE $3)
+          ${fuelFilter}
+        ORDER BY
+          CASE WHEN UPPER(postcode)=$1 THEN 0
+               WHEN REPLACE(UPPER(postcode),' ','')=$2 THEN 1
+               ELSE 2 END,
+          name ASC
+        LIMIT $4`,
+      [full, compact, district + '%', limit]
+    );
+    return r.rows;
+  }
+  const tokens = raw.split(/\s+/).filter(Boolean);
+  return searchStationsTokens({ tokens, fuelType, limit });
+}
+
 async function getStationById(id) {
   const pool = getPool();
   const result = await pool.query(
@@ -98,4 +137,4 @@ async function getLastUpdated() {
   return result.rows[0];
 }
 
-module.exports = { getNearbyStations, searchStations, searchStationsTokens, getStationById, getLastUpdated };
+module.exports = { getNearbyStations, searchStations, searchStationsTokens, searchStationsSmart, getStationById, getLastUpdated, normalisePostcode, isPostcodeLike };
