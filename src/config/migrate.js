@@ -221,6 +221,46 @@ async function runMigrations() {
   await pool.query(
     'CREATE INDEX IF NOT EXISTS idx_non_gov_prices_station ON non_gov_prices(station_id);'
   );
+
+  // Sprint 15: Fuel Finder (UK Gov) integration
+  // Adds fuel_finder_node_id for cross-referencing with Fuel Finder API
+  // plus optional metadata fields (motorway/supermarket flags, opening hours, amenities).
+  // premium_petrol_price/premium_diesel_price cover B7_PREMIUM/E5 super unleaded
+  // surfaced by the Fuel Finder feed but absent from the CMA scheme.
+  await pool.query(`ALTER TABLE stations ADD COLUMN IF NOT EXISTS fuel_finder_node_id VARCHAR(200)`);
+  await pool.query(`ALTER TABLE stations ADD COLUMN IF NOT EXISTS is_motorway BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE stations ADD COLUMN IF NOT EXISTS is_supermarket BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE stations ADD COLUMN IF NOT EXISTS temporary_closure BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE stations ADD COLUMN IF NOT EXISTS permanent_closure BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE stations ADD COLUMN IF NOT EXISTS opening_hours JSONB`);
+  await pool.query(`ALTER TABLE stations ADD COLUMN IF NOT EXISTS amenities JSONB`);
+  await pool.query(`ALTER TABLE stations ADD COLUMN IF NOT EXISTS fuel_types JSONB`);
+  await pool.query(`ALTER TABLE stations ADD COLUMN IF NOT EXISTS super_unleaded_price DECIMAL(5, 1)`);
+  await pool.query(`ALTER TABLE stations ADD COLUMN IF NOT EXISTS super_unleaded_source VARCHAR(30)`);
+  await pool.query(`ALTER TABLE stations ADD COLUMN IF NOT EXISTS premium_diesel_price DECIMAL(5, 1)`);
+  await pool.query(`ALTER TABLE stations ADD COLUMN IF NOT EXISTS premium_diesel_source VARCHAR(30)`);
+  await pool.query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_stations_fuel_finder_node_id
+       ON stations(fuel_finder_node_id)
+       WHERE fuel_finder_node_id IS NOT NULL`
+  );
+
+  // Fuel Finder sync state - tracks last successful price update timestamp
+  // so incremental price fetches know where to resume from.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fuel_finder_sync_state (
+      id                       INTEGER PRIMARY KEY DEFAULT 1,
+      last_station_sync_at     TIMESTAMPTZ,
+      last_price_sync_at       TIMESTAMPTZ,
+      last_price_effective_ts  TIMESTAMPTZ,
+      updated_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CONSTRAINT fuel_finder_sync_state_singleton CHECK (id = 1)
+    );
+  `);
+  await pool.query(`
+    INSERT INTO fuel_finder_sync_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING
+  `);
+
   console.log('DB migrations complete.');
 }
 

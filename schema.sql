@@ -164,3 +164,32 @@ CREATE INDEX IF NOT EXISTS idx_non_gov_prices_station_id
 ALTER TABLE stations ADD COLUMN IF NOT EXISTS petrol_source VARCHAR(20) DEFAULT 'gov';
 ALTER TABLE stations ADD COLUMN IF NOT EXISTS diesel_source VARCHAR(20) DEFAULT 'gov';
 ALTER TABLE stations ADD COLUMN IF NOT EXISTS e10_source VARCHAR(20) DEFAULT 'gov';
+
+-- Sprint 15: UK Gov Fuel Finder ingestion
+ALTER TABLE stations ADD COLUMN IF NOT EXISTS fuel_finder_node_id VARCHAR(200);
+ALTER TABLE stations ADD COLUMN IF NOT EXISTS is_motorway BOOLEAN DEFAULT false;
+ALTER TABLE stations ADD COLUMN IF NOT EXISTS is_supermarket BOOLEAN DEFAULT false;
+ALTER TABLE stations ADD COLUMN IF NOT EXISTS temporary_closure BOOLEAN DEFAULT false;
+ALTER TABLE stations ADD COLUMN IF NOT EXISTS permanent_closure BOOLEAN DEFAULT false;
+ALTER TABLE stations ADD COLUMN IF NOT EXISTS opening_hours JSONB;
+ALTER TABLE stations ADD COLUMN IF NOT EXISTS amenities JSONB;
+ALTER TABLE stations ADD COLUMN IF NOT EXISTS fuel_types JSONB;
+ALTER TABLE stations ADD COLUMN IF NOT EXISTS super_unleaded_price DECIMAL(5, 1);
+ALTER TABLE stations ADD COLUMN IF NOT EXISTS super_unleaded_source VARCHAR(30);
+ALTER TABLE stations ADD COLUMN IF NOT EXISTS premium_diesel_price DECIMAL(5, 1);
+ALTER TABLE stations ADD COLUMN IF NOT EXISTS premium_diesel_source VARCHAR(30);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_stations_fuel_finder_node_id
+  ON stations(fuel_finder_node_id)
+  WHERE fuel_finder_node_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS fuel_finder_sync_state (
+  id                       INTEGER PRIMARY KEY DEFAULT 1,
+  last_station_sync_at     TIMESTAMPTZ,
+  last_price_sync_at       TIMESTAMPTZ,
+  last_price_effective_ts  TIMESTAMPTZ,
+  updated_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT fuel_finder_sync_state_singleton CHECK (id = 1)
+);
+
+INSERT INTO fuel_finder_sync_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
