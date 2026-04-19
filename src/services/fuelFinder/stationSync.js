@@ -106,6 +106,9 @@ async function syncStations({ apiClient, pool = getPool() }) {
         await upsertStation(pool, row);
         stationsUpserted++;
       } catch (err) {
+        if (errors.length < 5) {
+          console.error(`[FuelFinder] Upsert failed for ${s.node_id}:`, err.message);
+        }
         errors.push({ node_id: s.node_id, message: err.message });
       }
     }

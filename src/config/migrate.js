@@ -245,6 +245,10 @@ async function runMigrations() {
        WHERE fuel_finder_node_id IS NOT NULL`
   );
 
+  // Widen stations.id to fit Fuel Finder IDs (`ff-` + 64-char node_id = 67 chars).
+  // ALTER COLUMN TYPE on VARCHAR only raises the limit; no data rewrite.
+  await pool.query(`ALTER TABLE stations ALTER COLUMN id TYPE VARCHAR(100)`);
+
   // Fuel Finder sync state - tracks last successful price update timestamp
   // so incremental price fetches know where to resume from.
   await pool.query(`

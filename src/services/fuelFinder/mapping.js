@@ -59,10 +59,10 @@ function stationToRow(station) {
   const brand = station.brand_name || station.trading_name || 'Unknown';
   const name = station.trading_name || station.brand_name || 'Unknown station';
   const addressParts = [
-    station.address_line_1,
-    station.address_line_2,
-    station.locality,
-    station.town,
+    loc.address_line_1,
+    loc.address_line_2,
+    loc.city,
+    loc.county,
   ].filter(Boolean);
   const address = addressParts.length ? addressParts.join(', ') : (loc.address || '');
 
