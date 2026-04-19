@@ -118,6 +118,55 @@ test('non-retryable errors bubble up', async () => {
   await assert.rejects(() => client.getStationsBatch(1), /403/);
 });
 
+test('routes stations through proxy URL with x-proxy-secret header when proxyUrl set', async () => {
+  const http = makeHttp([{ body: { data: [{ node_id: 'a' }] } }]);
+  const client = createApiClient({
+    tokenManager: makeTokenManager(),
+    httpClient: http,
+    sleepFn: async () => {},
+    requestDelayMs: 0,
+    proxyUrl: 'https://proxy.example.com',
+    proxySecret: 'supersecret',
+  });
+  await client.getStationsBatch(3);
+  assert.equal(http.calls[0].url, 'https://proxy.example.com/stations');
+  assert.equal(http.calls[0].opts.headers['x-proxy-secret'], 'supersecret');
+  assert.equal(http.calls[0].opts.headers.Authorization, 'Bearer T1');
+  assert.equal(http.calls[0].opts.params['batch-number'], 3);
+});
+
+test('routes prices through proxy URL when proxyUrl set', async () => {
+  const http = makeHttp([{ body: [] }]);
+  const client = createApiClient({
+    tokenManager: makeTokenManager(),
+    httpClient: http,
+    sleepFn: async () => {},
+    requestDelayMs: 0,
+    proxyUrl: 'https://proxy.example.com',
+    proxySecret: 'supersecret',
+  });
+  await client.getPricesBatch(4, '2026-04-19T12:00:00Z');
+  assert.equal(http.calls[0].url, 'https://proxy.example.com/prices');
+  assert.equal(http.calls[0].opts.headers['x-proxy-secret'], 'supersecret');
+  assert.equal(http.calls[0].opts.params['batch-number'], 4);
+  assert.equal(http.calls[0].opts.params['effective-start-timestamp'], '2026-04-19T12:00:00Z');
+});
+
+test('direct mode hits fuel-finder.service.gov.uk when proxyUrl not set', async () => {
+  const http = makeHttp([{ body: [] }]);
+  const client = createApiClient({
+    tokenManager: makeTokenManager(),
+    httpClient: http,
+    sleepFn: async () => {},
+    requestDelayMs: 0,
+    baseUrl: 'https://www.fuel-finder.service.gov.uk',
+    proxyUrl: null,
+  });
+  await client.getStationsBatch(1);
+  assert.equal(http.calls[0].url, 'https://www.fuel-finder.service.gov.uk/api/v1/pfs');
+  assert.equal(http.calls[0].opts.headers['x-proxy-secret'], undefined);
+});
+
 test('request delay enforces spacing between calls', async () => {
   const waits = [];
   const http = makeHttp([

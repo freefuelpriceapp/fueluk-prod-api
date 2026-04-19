@@ -8,11 +8,18 @@ const axios = require('axios');
  * transient-error retries with backoff, and a client-side rate limit
  * (120 rpm / 10k rpd, with the docs recommending a 5s delay between
  * batch requests).
+ *
+ * The Fuel Finder API blocks non-UK datacenter IPs. When FUEL_FINDER_PROXY_URL
+ * is set, all station/price requests are routed through a UK-based Lambda
+ * proxy. Proxy routes are /stations and /prices (vs. /api/v1/pfs[...]
+ * upstream) and require an x-proxy-secret header.
  */
 
 const DEFAULT_BASE_URL = 'https://www.fuel-finder.service.gov.uk';
 const STATIONS_PATH = '/api/v1/pfs';
 const PRICES_PATH = '/api/v1/pfs/fuel-prices';
+const PROXY_STATIONS_PATH = '/stations';
+const PROXY_PRICES_PATH = '/prices';
 
 // Fuel Finder docs: 120 req/min, 10k req/day, recommended 5s between batches.
 const DEFAULT_REQUEST_DELAY_MS = 5000;
@@ -35,6 +42,8 @@ function isRetryable(err) {
 function createApiClient({
   tokenManager,
   baseUrl = process.env.FUEL_FINDER_BASE_URL || DEFAULT_BASE_URL,
+  proxyUrl = process.env.FUEL_FINDER_PROXY_URL || null,
+  proxySecret = process.env.FUEL_FINDER_PROXY_SECRET || null,
   httpClient = axios,
   requestDelayMs = Number(process.env.FUEL_FINDER_REQUEST_DELAY_MS) || DEFAULT_REQUEST_DELAY_MS,
   sleepFn = sleep,
@@ -50,13 +59,28 @@ function createApiClient({
     lastRequestAt = Date.now();
   }
 
-  async function request(path, params, { attempt = 0 } = {}) {
+  function buildUrl(kind) {
+    if (proxyUrl) {
+      const path = kind === 'stations' ? PROXY_STATIONS_PATH : PROXY_PRICES_PATH;
+      return `${proxyUrl}${path}`;
+    }
+    const path = kind === 'stations' ? STATIONS_PATH : PRICES_PATH;
+    return `${baseUrl}${path}`;
+  }
+
+  function buildHeaders(token) {
+    const headers = { Authorization: `Bearer ${token}`, Accept: 'application/json' };
+    if (proxyUrl && proxySecret) headers['x-proxy-secret'] = proxySecret;
+    return headers;
+  }
+
+  async function request(kind, params, { attempt = 0 } = {}) {
     await throttle();
     const token = await tokenManager.getToken();
     try {
-      const resp = await httpClient.get(`${baseUrl}${path}`, {
+      const resp = await httpClient.get(buildUrl(kind), {
         params,
-        headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+        headers: buildHeaders(token),
         timeout: 30000,
       });
       return resp.data;
@@ -64,12 +88,12 @@ function createApiClient({
       // 401 -> token likely expired mid-flight; invalidate and retry once.
       if (err.response && err.response.status === 401 && attempt === 0) {
         tokenManager.invalidate();
-        return request(path, params, { attempt: attempt + 1 });
+        return request(kind, params, { attempt: attempt + 1 });
       }
       if (isRetryable(err) && attempt < MAX_RETRIES) {
         const backoff = 1000 * Math.pow(2, attempt);
         await sleepFn(backoff);
-        return request(path, params, { attempt: attempt + 1 });
+        return request(kind, params, { attempt: attempt + 1 });
       }
       throw err;
     }
@@ -80,7 +104,7 @@ function createApiClient({
    * keep incrementing batch-number until the response length < 500.
    */
   async function getStationsBatch(batchNumber) {
-    const body = await request(STATIONS_PATH, { 'batch-number': batchNumber });
+    const body = await request('stations', { 'batch-number': batchNumber });
     return extractArray(body);
   }
 
@@ -92,7 +116,7 @@ function createApiClient({
     if (effectiveStartTimestamp) {
       params['effective-start-timestamp'] = effectiveStartTimestamp;
     }
-    const body = await request(PRICES_PATH, params);
+    const body = await request('prices', params);
     return extractArray(body);
   }
 
