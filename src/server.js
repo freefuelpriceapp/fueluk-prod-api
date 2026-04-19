@@ -18,6 +18,7 @@ const errorHandler = require('./middleware/errorHandler');
 const notFound = require('./middleware/notFound');
 const { generalLimiter } = require('./middleware/rateLimiter');
 const { scheduleFuelSync } = require('./services/govFuelData');
+const { scheduleFuelFinder } = require('./services/fuelFinder');
 const { startIngestRunner } = require('./jobs/ingestRunner');
 const { startAlertJob } = require('./jobs/alertJob');
 const { startRetentionJob } = require('./jobs/retentionJob');
@@ -98,6 +99,7 @@ async function start() {
 
     // Start background jobs
     scheduleFuelSync();
+    scheduleFuelFinder();
     startIngestRunner();
     startAlertJob();
     startRetentionJob();

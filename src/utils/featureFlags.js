@@ -31,6 +31,12 @@ const FLAGS = {
 
   // ── Future — disabled, monetization ────────────────────
   monetization:        env('FEATURE_MONETIZATION',        false),
+
+  // ── Sprint 15 — disabled, UK Gov Fuel Finder ingestion ──
+  // When true the server schedules daily station syncs and 5-minute price
+  // updates from the UK Gov Fuel Finder API. Must also provide credentials
+  // via FUEL_FINDER_CLIENT_ID / FUEL_FINDER_CLIENT_SECRET.
+  fuel_finder:         env('FEATURE_FUEL_FINDER',         false),
 };
 
 function env(key, defaultVal) {
