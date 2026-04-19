@@ -40,7 +40,15 @@ test('stationToRow flattens the Fuel Finder station shape', () => {
     permanent_closure: false,
     is_motorway_service_station: true,
     is_supermarket_service_station: false,
-    location: { latitude: 52.1, longitude: -1.2, postcode: 'B26 3QJ' },
+    location: {
+      latitude: 52.1,
+      longitude: -1.2,
+      postcode: 'B26 3QJ',
+      address_line_1: '1 High St',
+      address_line_2: 'Unit 2',
+      city: 'Birmingham',
+      county: 'West Midlands',
+    },
     opening_times: { monday: '24h' },
     fuel_types: ['E10', 'E5', 'B7_STANDARD'],
     amenities: ['toilets'],
@@ -50,6 +58,7 @@ test('stationToRow flattens the Fuel Finder station shape', () => {
   assert.equal(row.brand, 'Shell');
   assert.equal(row.name, 'Shell Foobar');
   assert.equal(row.postcode, 'B26 3QJ');
+  assert.equal(row.address, '1 High St, Unit 2, Birmingham, West Midlands');
   assert.equal(row.is_motorway, true);
   assert.equal(row.is_supermarket, false);
   assert.equal(row.lat, 52.1);
