@@ -11,11 +11,18 @@ const axios = require('axios');
  * This module caches the active token in-process, proactively refreshes a
  * minute before expiry, and falls back to a fresh generate_access_token if
  * refresh fails.
+ *
+ * The Fuel Finder API blocks non-UK datacenter IPs. When FUEL_FINDER_PROXY_URL
+ * is set, all token requests are routed through a UK-based Lambda proxy that
+ * forwards them to the real API. Proxy calls hit a single POST /token route
+ * (vs. separate generate/regenerate paths upstream) and require an
+ * x-proxy-secret header.
  */
 
 const DEFAULT_BASE_URL = 'https://www.fuel-finder.service.gov.uk';
 const TOKEN_PATH = '/api/v1/oauth/generate_access_token';
 const REFRESH_PATH = '/api/v1/oauth/regenerate_access_token';
+const PROXY_TOKEN_PATH = '/token';
 // Refresh this many ms before expiry so we never send an expired bearer.
 const REFRESH_SKEW_MS = 60 * 1000;
 
@@ -23,6 +30,8 @@ function createTokenManager({
   clientId = process.env.FUEL_FINDER_CLIENT_ID,
   clientSecret = process.env.FUEL_FINDER_CLIENT_SECRET,
   baseUrl = process.env.FUEL_FINDER_BASE_URL || DEFAULT_BASE_URL,
+  proxyUrl = process.env.FUEL_FINDER_PROXY_URL || null,
+  proxySecret = process.env.FUEL_FINDER_PROXY_SECRET || null,
   httpClient = axios,
   now = () => Date.now(),
 } = {}) {
@@ -46,14 +55,28 @@ function createTokenManager({
     return accessToken;
   }
 
+  function tokenRequestConfig() {
+    const headers = { 'Content-Type': 'application/json' };
+    if (proxyUrl && proxySecret) headers['x-proxy-secret'] = proxySecret;
+    return { timeout: 10000, headers };
+  }
+
+  function generateUrl() {
+    return proxyUrl ? `${proxyUrl}${PROXY_TOKEN_PATH}` : `${baseUrl}${TOKEN_PATH}`;
+  }
+
+  function refreshUrl() {
+    return proxyUrl ? `${proxyUrl}${PROXY_TOKEN_PATH}` : `${baseUrl}${REFRESH_PATH}`;
+  }
+
   async function generate() {
     if (!clientId || !clientSecret) {
       throw new Error('Fuel Finder credentials not configured (FUEL_FINDER_CLIENT_ID / FUEL_FINDER_CLIENT_SECRET)');
     }
     const resp = await httpClient.post(
-      `${baseUrl}${TOKEN_PATH}`,
+      generateUrl(),
       { client_id: clientId, client_secret: clientSecret },
-      { timeout: 10000, headers: { 'Content-Type': 'application/json' } }
+      tokenRequestConfig()
     );
     const body = resp.data && (resp.data.data || resp.data);
     return applyTokenResponse(body);
@@ -63,9 +86,9 @@ function createTokenManager({
     if (!refreshToken) return generate();
     try {
       const resp = await httpClient.post(
-        `${baseUrl}${REFRESH_PATH}`,
+        refreshUrl(),
         { client_id: clientId, refresh_token: refreshToken },
-        { timeout: 10000, headers: { 'Content-Type': 'application/json' } }
+        tokenRequestConfig()
       );
       const body = resp.data && (resp.data.data || resp.data);
       return applyTokenResponse(body);
