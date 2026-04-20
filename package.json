@@ -1,6 +1,6 @@
 {
   "name": "fueluk-prod-api",
-  "version": "9.0.0",
+  "version": "9.1.0",
   "description": "FreeFuelPrice UK - Real-time fuel price API",
   "main": "src/server.js",
   "scripts": {

@@ -1,9 +1,10 @@
 'use strict';
 const router = require('express').Router();
 const { getPool } = require('../config/db');
+const { cacheFor } = require('../middleware/responseCache');
 
 // GET /api/v1/meta/last-updated
-router.get('/last-updated', async (req, res, next) => {
+router.get('/last-updated', cacheFor(60), async (req, res, next) => {
   try {
     const result = await getPool().query(
       'SELECT MAX(last_updated) AS last_updated FROM stations'

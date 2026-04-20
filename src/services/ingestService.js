@@ -2,6 +2,7 @@
 const { syncFuelData } = require('./govFuelData');
 const { getPool } = require('../config/db');
 const { fillMissingPrices } = require('./nonGovFuelData');
+const { clearCache } = require('../middleware/responseCache');
 
 /**
  * ingestService.js — Sprint 2 + Sprint 4 update
@@ -22,15 +23,17 @@ const { fillMissingPrices } = require('./nonGovFuelData');
 async function snapshotPriceHistory() {
   const pool = getPool();
   const result = await pool.query(`
-    INSERT INTO price_history (station_id, fuel_type, price_pence, recorded_at)
-    SELECT s.id, v.fuel_type, v.price_pence, date_trunc('hour', NOW()) AS recorded_at
+    INSERT INTO price_history (station_id, fuel_type, price_pence, source, recorded_at)
+    SELECT s.id, v.fuel_type, v.price_pence, v.source, date_trunc('hour', NOW()) AS recorded_at
     FROM stations s
     CROSS JOIN LATERAL (
       VALUES
-        ('petrol', s.petrol_price),
-        ('diesel', s.diesel_price),
-        ('e10',    s.e10_price)
-    ) AS v(fuel_type, price_pence)
+        ('petrol',         s.petrol_price,         COALESCE(s.petrol_source,         'gov')),
+        ('diesel',         s.diesel_price,         COALESCE(s.diesel_source,         'gov')),
+        ('e10',            s.e10_price,            COALESCE(s.e10_source,            'gov')),
+        ('super_unleaded', s.super_unleaded_price, COALESCE(s.super_unleaded_source, 'fuel_finder')),
+        ('premium_diesel', s.premium_diesel_price, COALESCE(s.premium_diesel_source, 'fuel_finder'))
+    ) AS v(fuel_type, price_pence, source)
     WHERE v.price_pence IS NOT NULL
     ON CONFLICT (station_id, fuel_type, recorded_at) DO NOTHING
   `);
@@ -87,6 +90,18 @@ async function runFullIngest() {
         stationsPatched: fillResult.filled,
     errors: syncResult.errors,
   };
+
+  // Invalidate the response cache so users see the fresh prices immediately.
+  // Only clear when at least one upstream step succeeded; a total-failure run
+  // would otherwise evict a warm cache for no benefit.
+  if (syncResult.totalUpserted > 0 || fillResult.filled > 0 || snapshotRows > 0) {
+    try {
+      clearCache();
+      console.log('[IngestService] Response cache cleared post-ingest');
+    } catch (err) {
+      console.error('[IngestService] clearCache failed:', err.message);
+    }
+  }
 
   console.log('[IngestService] Ingest complete:', JSON.stringify(summary));
   return summary;

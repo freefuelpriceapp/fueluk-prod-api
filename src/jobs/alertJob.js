@@ -15,6 +15,7 @@ const { isEnabled } = require('../utils/featureFlags');
  */
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
+const { formatAlertNotification } = require('../utils/alertNotification');
 // Sprint 2: notify at most once per 6 hours for the same station+fuel+device
 // so a prolonged price dip doesn't spam the user's lock screen.
 const NOTIFY_COOLDOWN_HOURS = parseInt(process.env.ALERT_COOLDOWN_HOURS || '6', 10);
@@ -105,8 +106,7 @@ async function runAlertCheck() {
       .map(a => ({
         to: a.device_token,
         sound: 'default',
-        title: `⛽ ${a.fuel_type.charAt(0).toUpperCase() + a.fuel_type.slice(1)} price alert!`,
-        body: `${a.station_brand || a.station_name} is now ${(a.current_price / 100).toFixed(1)}p/L — below your ${(a.threshold_pence / 100).toFixed(1)}p target.`,
+        ...formatAlertNotification(a),
         data: {
           alertId: a.id,
           fuelType: a.fuel_type,
@@ -160,4 +160,4 @@ function startAlertJob() {
   });
 }
 
-module.exports = { startAlertJob, runAlertCheck };
+module.exports = { startAlertJob, runAlertCheck, formatAlertNotification };
