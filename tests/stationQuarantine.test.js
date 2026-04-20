@@ -6,6 +6,9 @@ const assert = require('node:assert/strict');
 const {
   deduplicateStations,
   sanitizeStationPrices,
+  validateCrossFuelPrices,
+  annotateStations,
+  isSupermarketBrand,
   mergeStations,
 } = require('../src/utils/stationQuarantine');
 
@@ -203,4 +206,134 @@ test('sanitize + dedup compose: a bogus gov price drops out so fuel_finder wins 
   assert.equal(out.length, 1);
   assert.equal(out[0].petrol_price, 153.9);
   assert.equal(out[0].petrol_source, 'fuel_finder');
+});
+
+test('isSupermarketBrand matches known supermarket names case- and punctuation-insensitively', () => {
+  assert.equal(isSupermarketBrand('Asda'), true);
+  assert.equal(isSupermarketBrand('ASDA'), true);
+  assert.equal(isSupermarketBrand('ASDA EXPRESS'), true);
+  assert.equal(isSupermarketBrand('TESCO'), true);
+  assert.equal(isSupermarketBrand('Tesco'), true);
+  assert.equal(isSupermarketBrand("Sainsbury's"), true);
+  assert.equal(isSupermarketBrand('SAINSBURYS'), true);
+  assert.equal(isSupermarketBrand('MORRISONS'), true);
+  assert.equal(isSupermarketBrand('Morrisons'), true);
+  assert.equal(isSupermarketBrand('COSTCO WHOLESALE'), true);
+  assert.equal(isSupermarketBrand('Costco'), true);
+});
+
+test('isSupermarketBrand returns false for non-supermarket brands', () => {
+  assert.equal(isSupermarketBrand('BP'), false);
+  assert.equal(isSupermarketBrand('Shell'), false);
+  assert.equal(isSupermarketBrand('Applegreen'), false);
+  assert.equal(isSupermarketBrand(null), false);
+  assert.equal(isSupermarketBrand(''), false);
+});
+
+test('annotateStations sets is_supermarket for supermarket brands', () => {
+  const stations = [
+    { id: '1', brand: 'Asda', last_updated: null },
+    { id: '2', brand: "Sainsbury's", last_updated: null },
+    { id: '3', brand: 'BP', last_updated: null },
+  ];
+  const out = annotateStations(stations);
+  assert.equal(out[0].is_supermarket, true);
+  assert.equal(out[1].is_supermarket, true);
+  assert.equal(out[2].is_supermarket, false);
+});
+
+test('annotateStations preserves pre-existing is_supermarket=true even for unknown brands', () => {
+  const stations = [{ id: '1', brand: 'Some Indie', is_supermarket: true, last_updated: null }];
+  const out = annotateStations(stations);
+  assert.equal(out[0].is_supermarket, true);
+});
+
+test('annotateStations computes price_age_hours and stale flag', () => {
+  const now = Date.parse('2026-04-20T12:00:00Z');
+  const stations = [
+    { id: 'fresh', last_updated: '2026-04-20T11:00:00Z' },
+    { id: 'day-old', last_updated: '2026-04-19T12:00:00Z' },
+    { id: 'stale', last_updated: '2026-04-17T11:00:00Z' },
+  ];
+  const out = annotateStations(stations, { staleThresholdHours: 48, now });
+  assert.equal(out[0].price_age_hours, 1);
+  assert.equal(out[0].stale, false);
+  assert.equal(out[1].price_age_hours, 24);
+  assert.equal(out[1].stale, false);
+  assert.equal(out[2].price_age_hours, 73);
+  assert.equal(out[2].stale, true);
+});
+
+test('annotateStations respects custom stale_threshold_hours', () => {
+  const now = Date.parse('2026-04-20T12:00:00Z');
+  const stations = [{ id: '1', last_updated: '2026-04-20T06:00:00Z' }];
+  const strict = annotateStations(stations, { staleThresholdHours: 1, now });
+  const loose = annotateStations(stations, { staleThresholdHours: 24, now });
+  assert.equal(strict[0].stale, true);
+  assert.equal(loose[0].stale, false);
+});
+
+test('annotateStations returns null price_age_hours when last_updated is missing', () => {
+  const out = annotateStations([{ id: '1', last_updated: null }]);
+  assert.equal(out[0].price_age_hours, null);
+  assert.equal(out[0].stale, false);
+});
+
+test('validateCrossFuelPrices nulls petrol_price when E5 < E10', () => {
+  const calls = [];
+  const logger = { warn: (m) => calls.push(m) };
+  const out = validateCrossFuelPrices(
+    [gov({ id: 'asda-bow', postcode: 'E3 2AN', petrol_price: 138.9, e10_price: 157.9 })],
+    { logger },
+  );
+  assert.equal(out[0].petrol_price, null);
+  assert.equal(out[0].e10_price, 157.9, 'E10 is untouched');
+  assert.equal(calls.length, 1);
+  assert.match(calls[0], /E5<E10/);
+  assert.match(calls[0], /asda-bow/);
+});
+
+test('validateCrossFuelPrices leaves prices alone when E5 >= E10', () => {
+  const station = gov({ petrol_price: 160.9, e10_price: 154.9 });
+  const [out] = validateCrossFuelPrices([station], { logger: silentLogger });
+  assert.equal(out, station, 'returns original object when unchanged');
+  assert.equal(out.petrol_price, 160.9);
+});
+
+test('validateCrossFuelPrices nulls premium_diesel_price when premium < diesel', () => {
+  const calls = [];
+  const logger = { warn: (m) => calls.push(m) };
+  const out = validateCrossFuelPrices(
+    [ff({ diesel_price: 165.9, premium_diesel_price: 155.9 })],
+    { logger },
+  );
+  assert.equal(out[0].premium_diesel_price, null);
+  assert.equal(out[0].diesel_price, 165.9);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0], /premium<diesel/);
+});
+
+test('validateCrossFuelPrices ignores stations missing one side of the pair', () => {
+  const s = gov({ petrol_price: 120, e10_price: null });
+  const [out] = validateCrossFuelPrices([s], { logger: silentLogger });
+  assert.equal(out, s);
+  assert.equal(out.petrol_price, 120);
+});
+
+test('validateCrossFuelPrices handles both inversions on the same station', () => {
+  const calls = [];
+  const logger = { warn: (m) => calls.push(m) };
+  const out = validateCrossFuelPrices(
+    [ff({ petrol_price: 150, e10_price: 155, diesel_price: 170, premium_diesel_price: 160 })],
+    { logger },
+  );
+  assert.equal(out[0].petrol_price, null);
+  assert.equal(out[0].premium_diesel_price, null);
+  assert.equal(out[0].e10_price, 155);
+  assert.equal(out[0].diesel_price, 170);
+  assert.equal(calls.length, 2);
+});
+
+test('validateCrossFuelPrices handles non-array input', () => {
+  assert.deepEqual(validateCrossFuelPrices(null), []);
 });

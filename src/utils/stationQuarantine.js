@@ -16,6 +16,7 @@
 const COORD_TOLERANCE = 0.0005; // ~50m at UK latitudes
 const MIN_PLAUSIBLE_PRICE = 110;
 const MAX_PLAUSIBLE_PRICE = 300;
+const DEFAULT_STALE_THRESHOLD_HOURS = 48;
 
 const PRICE_FIELDS = [
   'petrol_price',
@@ -32,6 +33,27 @@ const SOURCE_FIELDS = {
   super_unleaded_price: 'super_unleaded_source',
   premium_diesel_price: 'premium_diesel_source',
 };
+
+// Supermarket brand names (normalized via stripPunctuation+uppercase for matching).
+const SUPERMARKET_BRAND_KEYS = new Set([
+  'ASDA',
+  'ASDAEXPRESS',
+  'TESCO',
+  'SAINSBURYS',
+  'MORRISONS',
+  'COSTCO',
+  'COSTCOWHOLESALE',
+]);
+
+function normalizeBrandKey(brand) {
+  if (brand == null) return '';
+  return String(brand).toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+function isSupermarketBrand(brand) {
+  const key = normalizeBrandKey(brand);
+  return key ? SUPERMARKET_BRAND_KEYS.has(key) : false;
+}
 
 function isFuelFinder(station) {
   return typeof station?.id === 'string' && station.id.startsWith('ff-');
@@ -254,11 +276,102 @@ function sanitizeStationPrices(stations, { logger = console } = {}) {
   });
 }
 
+/**
+ * Detect and null out cross-fuel price inversions:
+ *   - E5 (super_unleaded_price / petrol_price at UK gov feeds) must be >= E10.
+ *     Here petrol_price is the E5/standard unleaded column — if it is less
+ *     than e10_price, the E5 value is stale/wrong and gets dropped.
+ *   - premium_diesel_price must be >= diesel_price; otherwise the premium
+ *     value is stale and gets dropped.
+ * Mutates copies only. Logs every inversion for monitoring.
+ */
+function validateCrossFuelPrices(stations, { logger = console } = {}) {
+  if (!Array.isArray(stations)) return [];
+
+  return stations.map((station) => {
+    if (!station || typeof station !== 'object') return station;
+
+    let changed = false;
+    let next = station;
+
+    const petrol = station.petrol_price != null ? Number(station.petrol_price) : null;
+    const e10 = station.e10_price != null ? Number(station.e10_price) : null;
+    if (Number.isFinite(petrol) && Number.isFinite(e10) && petrol < e10) {
+      next = changed ? next : { ...station };
+      next.petrol_price = null;
+      changed = true;
+      if (logger && typeof logger.warn === 'function') {
+        logger.warn(
+          `[Quarantine] Cross-fuel inversion E5<E10: petrol_price=${petrol} `
+          + `e10_price=${e10} station=${station.id} postcode=${station.postcode || 'n/a'}`,
+        );
+      }
+    }
+
+    const diesel = station.diesel_price != null ? Number(station.diesel_price) : null;
+    const premiumDiesel = station.premium_diesel_price != null
+      ? Number(station.premium_diesel_price) : null;
+    if (Number.isFinite(diesel) && Number.isFinite(premiumDiesel) && premiumDiesel < diesel) {
+      next = changed ? next : { ...station };
+      next.premium_diesel_price = null;
+      changed = true;
+      if (logger && typeof logger.warn === 'function') {
+        logger.warn(
+          `[Quarantine] Cross-fuel inversion premium<diesel: premium_diesel_price=${premiumDiesel} `
+          + `diesel_price=${diesel} station=${station.id} postcode=${station.postcode || 'n/a'}`,
+        );
+      }
+    }
+
+    return changed ? next : station;
+  });
+}
+
+/**
+ * Annotate each station with derived brand/freshness flags:
+ *   - is_supermarket: true if brand matches a known supermarket name
+ *   - price_age_hours: hours since last_updated (rounded to 1 dp) or null
+ *   - stale: true if price_age_hours > staleThresholdHours
+ * Preserves any existing is_supermarket=true (e.g. from fuel_finder ingest).
+ */
+function annotateStations(stations, {
+  staleThresholdHours = DEFAULT_STALE_THRESHOLD_HOURS,
+  now = Date.now(),
+} = {}) {
+  if (!Array.isArray(stations)) return [];
+
+  return stations.map((station) => {
+    if (!station || typeof station !== 'object') return station;
+
+    const next = { ...station };
+
+    const supermarketFromBrand = isSupermarketBrand(station.brand);
+    next.is_supermarket = Boolean(station.is_supermarket) || supermarketFromBrand;
+
+    let priceAgeHours = null;
+    if (station.last_updated) {
+      const t = Date.parse(station.last_updated);
+      if (Number.isFinite(t)) {
+        priceAgeHours = Math.round(((now - t) / 3_600_000) * 10) / 10;
+      }
+    }
+    next.price_age_hours = priceAgeHours;
+    next.stale = priceAgeHours != null && priceAgeHours > staleThresholdHours;
+
+    return next;
+  });
+}
+
 module.exports = {
   deduplicateStations,
   sanitizeStationPrices,
+  validateCrossFuelPrices,
+  annotateStations,
   mergeStations,
+  isSupermarketBrand,
   MIN_PLAUSIBLE_PRICE,
   MAX_PLAUSIBLE_PRICE,
   COORD_TOLERANCE,
+  SUPERMARKET_BRAND_KEYS,
+  DEFAULT_STALE_THRESHOLD_HOURS,
 };

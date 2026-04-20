@@ -4,10 +4,22 @@ const stationService = require('../services/stationService');
 const {
   deduplicateStations,
   sanitizeStationPrices,
+  validateCrossFuelPrices,
+  annotateStations,
+  DEFAULT_STALE_THRESHOLD_HOURS,
 } = require('../utils/stationQuarantine');
 
-function cleanList(stations) {
-  return deduplicateStations(sanitizeStationPrices(stations));
+function parseStaleThresholdHours(raw) {
+  if (raw == null || raw === '') return DEFAULT_STALE_THRESHOLD_HOURS;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_STALE_THRESHOLD_HOURS;
+}
+
+function cleanList(stations, { staleThresholdHours } = {}) {
+  const sanitized = sanitizeStationPrices(stations);
+  const validated = validateCrossFuelPrices(sanitized);
+  const deduped = deduplicateStations(validated);
+  return annotateStations(deduped, { staleThresholdHours });
 }
 
 /**
@@ -55,7 +67,9 @@ async function getNearby(req, res, next) {
       brand: brand || null,
       limit: limitNum,
     });
-    const stations = cleanList(rawStations);
+    const stations = cleanList(rawStations, {
+      staleThresholdHours: parseStaleThresholdHours(req.query.stale_threshold_hours),
+    });
 
     return res.json({
       success: true,
@@ -106,7 +120,9 @@ async function search(req, res, next) {
       lat: latNum != null && !isNaN(latNum) ? latNum : null,
       lon: lonNum != null && !isNaN(lonNum) ? lonNum : null,
     });
-    const stations = cleanList(rawStations);
+    const stations = cleanList(rawStations, {
+      staleThresholdHours: parseStaleThresholdHours(req.query.stale_threshold_hours),
+    });
 
     return res.json({
       success: true,
@@ -143,8 +159,11 @@ async function getById(req, res, next) {
       });
     }
 
-    const [sanitized] = sanitizeStationPrices([station]);
-    return res.json({ success: true, station: sanitized });
+    const staleThresholdHours = parseStaleThresholdHours(req.query.stale_threshold_hours);
+    const sanitized = sanitizeStationPrices([station]);
+    const validated = validateCrossFuelPrices(sanitized);
+    const [annotated] = annotateStations(validated, { staleThresholdHours });
+    return res.json({ success: true, station: annotated });
   } catch (err) {
     next(err);
   }
@@ -172,7 +191,9 @@ async function getCheapest(req, res, next) {
       fuelType: fuel_type,
       limit: Math.min(parseInt(limit, 10) || 10, 20),
     });
-    const stations = cleanList(rawStations);
+    const stations = cleanList(rawStations, {
+      staleThresholdHours: parseStaleThresholdHours(req.query.stale_threshold_hours),
+    });
 
     return res.json({
       success: true,
