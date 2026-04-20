@@ -1,6 +1,7 @@
 'use strict';
 
 const stationRepository = require('../repositories/stationRepository');
+const { canonicalBrandName } = require('../utils/brandNormalizer');
 
 /**
  * stationService.js
@@ -130,7 +131,7 @@ function formatStation(row) {
   return {
     id: row.id,
     name: row.name,
-    brand: row.brand,
+    brand: row.brand ? canonicalBrandName(row.brand) : row.brand,
     address: row.address,
     postcode: row.postcode,
     lat: parseFloat(row.lat),
