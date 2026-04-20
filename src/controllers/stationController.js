@@ -37,12 +37,15 @@ async function getNearby(req, res, next) {
       });
     }
 
+    const limitNum = Math.min(parseInt(req.query.limit, 10) || 50, 200);
+
     const stations = await stationService.getNearbyStations({
       lat: latNum,
       lon: lonNum,
       radius: radiusNum,
       fuelType: fuel_type || null,
       brand: brand || null,
+      limit: limitNum,
     });
 
     return res.json({
@@ -74,7 +77,7 @@ async function getBrands(req, res, next) {
  */
 async function search(req, res, next) {
   try {
-    const { q, fuel_type, limit = 20 } = req.query;
+    const { q, fuel_type, limit = 20, lat, lon } = req.query;
 
     if (!q || q.trim().length < 2) {
       return res.status(400).json({
@@ -84,10 +87,15 @@ async function search(req, res, next) {
       });
     }
 
+    const latNum = lat != null && lat !== '' ? parseFloat(lat) : null;
+    const lonNum = lon != null && lon !== '' ? parseFloat(lon) : null;
+
     const stations = await stationService.searchStations({
       query: q.trim(),
       fuelType: fuel_type || null,
       limit: Math.min(parseInt(limit, 10) || 20, 50),
+      lat: latNum != null && !isNaN(latNum) ? latNum : null,
+      lon: lonNum != null && !isNaN(lonNum) ? lonNum : null,
     });
 
     return res.json({
@@ -136,7 +144,7 @@ async function getById(req, res, next) {
  */
 async function getCheapest(req, res, next) {
   try {
-    const { lat, lon, radius = 10, fuel_type = 'petrol', limit = 5 } = req.query;
+    const { lat, lon, radius = 10, fuel_type = 'petrol', limit = 10 } = req.query;
 
     if (!lat || !lon) {
       return res.status(400).json({
@@ -151,7 +159,7 @@ async function getCheapest(req, res, next) {
       lon: parseFloat(lon),
       radius: parseFloat(radius),
       fuelType: fuel_type,
-      limit: Math.min(parseInt(limit, 10) || 5, 20),
+      limit: Math.min(parseInt(limit, 10) || 10, 20),
     });
 
     return res.json({
