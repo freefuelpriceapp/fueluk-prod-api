@@ -25,7 +25,12 @@ router.get('/', async (req, res, next) => {
   try {
     const pool = getPool();
 
-    const [stationStats, brandStats, ingestStats, alertStats] = await Promise.all([
+    const staleThresholdHoursRaw = Number(req.query.stale_threshold_hours);
+    const staleThresholdHours = Number.isFinite(staleThresholdHoursRaw) && staleThresholdHoursRaw > 0
+      ? staleThresholdHoursRaw
+      : 48;
+
+    const [stationStats, brandStats, ingestStats, alertStats, priceStats, sourceStats] = await Promise.all([
       pool.query(`
         SELECT
           COUNT(*)::int AS total,
@@ -39,9 +44,14 @@ router.get('/', async (req, res, next) => {
           )::int AS missing_all_prices,
           COUNT(*) FILTER (WHERE last_updated < NOW() - INTERVAL '7 days')::int AS stale_over_7_days,
           COUNT(*) FILTER (WHERE last_updated < NOW() - INTERVAL '30 days')::int AS stale_over_30_days,
+          COUNT(*) FILTER (WHERE last_updated > NOW() - INTERVAL '1 hour')::int AS updated_last_1h,
+          COUNT(*) FILTER (WHERE last_updated > NOW() - INTERVAL '6 hours')::int AS updated_last_6h,
+          COUNT(*) FILTER (WHERE last_updated > NOW() - INTERVAL '24 hours')::int AS updated_last_24h,
+          COUNT(*) FILTER (WHERE last_updated > NOW() - INTERVAL '48 hours')::int AS updated_last_48h,
+          COUNT(*) FILTER (WHERE last_updated < NOW() - ($1 || ' hours')::interval)::int AS stale_over_threshold,
           MAX(last_updated) AS last_station_update
         FROM stations
-      `),
+      `, [String(staleThresholdHours)]),
       pool.query(`
         SELECT brand, COUNT(*)::int AS count
         FROM stations
@@ -62,6 +72,27 @@ router.get('/', async (req, res, next) => {
           COUNT(*) FILTER (WHERE active = true)::int AS total_active,
           COUNT(*) FILTER (WHERE last_notified_at > NOW() - INTERVAL '24 hours')::int AS fired_last_24h
         FROM price_alerts
+      `),
+      pool.query(`
+        SELECT
+          AVG(petrol_price)::numeric(6,2) AS avg_petrol,
+          AVG(diesel_price)::numeric(6,2) AS avg_diesel,
+          AVG(e10_price)::numeric(6,2) AS avg_e10,
+          PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY petrol_price)::numeric(6,2) AS median_petrol,
+          PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY diesel_price)::numeric(6,2) AS median_diesel,
+          PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY e10_price)::numeric(6,2) AS median_e10
+        FROM stations
+      `),
+      pool.query(`
+        SELECT
+          COALESCE(petrol_source, 'unknown') AS source,
+          AVG(petrol_price)::numeric(6,2) AS avg_petrol,
+          AVG(diesel_price)::numeric(6,2) AS avg_diesel,
+          AVG(e10_price)::numeric(6,2) AS avg_e10,
+          COUNT(*)::int AS station_count
+        FROM stations
+        GROUP BY COALESCE(petrol_source, 'unknown')
+        ORDER BY station_count DESC
       `),
     ]);
 
@@ -88,9 +119,21 @@ router.get('/', async (req, res, next) => {
       staleOver7Days: s.stale_over_7_days || 0,
     });
 
+    const price = priceStats.rows[0] || {};
+    const toNum = (v) => (v == null ? null : Number(v));
+
+    const bySource = (sourceStats.rows || []).map((r) => ({
+      source: r.source,
+      station_count: r.station_count || 0,
+      avg_petrol: toNum(r.avg_petrol),
+      avg_diesel: toNum(r.avg_diesel),
+      avg_e10: toNum(r.avg_e10),
+    }));
+
     res.json({
       status,
       timestamp: new Date().toISOString(),
+      stale_threshold_hours: staleThresholdHours,
       stations: {
         total: s.total || 0,
         with_petrol_price: s.with_petrol_price || 0,
@@ -99,6 +142,20 @@ router.get('/', async (req, res, next) => {
         missing_all_prices: s.missing_all_prices || 0,
         stale_over_7_days: s.stale_over_7_days || 0,
         stale_over_30_days: s.stale_over_30_days || 0,
+        stale_over_threshold: s.stale_over_threshold || 0,
+        updated_last_1h: s.updated_last_1h || 0,
+        updated_last_6h: s.updated_last_6h || 0,
+        updated_last_24h: s.updated_last_24h || 0,
+        updated_last_48h: s.updated_last_48h || 0,
+      },
+      prices: {
+        avg_petrol: toNum(price.avg_petrol),
+        avg_diesel: toNum(price.avg_diesel),
+        avg_e10: toNum(price.avg_e10),
+        median_petrol: toNum(price.median_petrol),
+        median_diesel: toNum(price.median_diesel),
+        median_e10: toNum(price.median_e10),
+        by_source: bySource,
       },
       brands: {
         total_distinct: brandsAll.length,
