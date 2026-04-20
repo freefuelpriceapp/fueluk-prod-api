@@ -1,6 +1,14 @@
 'use strict';
 
 const stationService = require('../services/stationService');
+const {
+  deduplicateStations,
+  sanitizeStationPrices,
+} = require('../utils/stationQuarantine');
+
+function cleanList(stations) {
+  return deduplicateStations(sanitizeStationPrices(stations));
+}
 
 /**
  * stationController.js
@@ -39,7 +47,7 @@ async function getNearby(req, res, next) {
 
     const limitNum = Math.min(parseInt(req.query.limit, 10) || 50, 200);
 
-    const stations = await stationService.getNearbyStations({
+    const rawStations = await stationService.getNearbyStations({
       lat: latNum,
       lon: lonNum,
       radius: radiusNum,
@@ -47,6 +55,7 @@ async function getNearby(req, res, next) {
       brand: brand || null,
       limit: limitNum,
     });
+    const stations = cleanList(rawStations);
 
     return res.json({
       success: true,
@@ -90,13 +99,14 @@ async function search(req, res, next) {
     const latNum = lat != null && lat !== '' ? parseFloat(lat) : null;
     const lonNum = lon != null && lon !== '' ? parseFloat(lon) : null;
 
-    const stations = await stationService.searchStations({
+    const rawStations = await stationService.searchStations({
       query: q.trim(),
       fuelType: fuel_type || null,
       limit: Math.min(parseInt(limit, 10) || 20, 50),
       lat: latNum != null && !isNaN(latNum) ? latNum : null,
       lon: lonNum != null && !isNaN(lonNum) ? lonNum : null,
     });
+    const stations = cleanList(rawStations);
 
     return res.json({
       success: true,
@@ -133,7 +143,8 @@ async function getById(req, res, next) {
       });
     }
 
-    return res.json({ success: true, station });
+    const [sanitized] = sanitizeStationPrices([station]);
+    return res.json({ success: true, station: sanitized });
   } catch (err) {
     next(err);
   }
@@ -154,13 +165,14 @@ async function getCheapest(req, res, next) {
       });
     }
 
-    const stations = await stationService.getCheapestNearby({
+    const rawStations = await stationService.getCheapestNearby({
       lat: parseFloat(lat),
       lon: parseFloat(lon),
       radius: parseFloat(radius),
       fuelType: fuel_type,
       limit: Math.min(parseInt(limit, 10) || 10, 20),
     });
+    const stations = cleanList(rawStations);
 
     return res.json({
       success: true,
