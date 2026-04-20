@@ -74,28 +74,37 @@ async function runMigrations() {
       id          BIGSERIAL PRIMARY KEY,
       station_id  VARCHAR(50) NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
       fuel_type   VARCHAR(10) NOT NULL,
-      price_pence DECIMAL(5, 1),
-      recorded_at TIMESTAMP NOT NULL DEFAULT date_trunc('hour', NOW())
+      price_pence DECIMAL(6, 1),
+      source      VARCHAR(30) DEFAULT 'gov',
+      recorded_at TIMESTAMPTZ NOT NULL DEFAULT date_trunc('hour', NOW())
     );
   `);
 
-  // Unique constraint: one snapshot per station per fuel per hour
+  // Ensure source column exists on older deployments that pre-date Sprint 2 redux.
+  await pool.query(`ALTER TABLE price_history ADD COLUMN IF NOT EXISTS source VARCHAR(30) DEFAULT 'gov'`);
+
+  // Drop legacy hour-truncated uniqueness: Sprint 2 change-detection already
+  // prevents duplicate writes, and NOW()-based timestamps would conflict
+  // otherwise on back-to-back updates in the same hour.
   await pool.query(`
     ALTER TABLE price_history
       DROP CONSTRAINT IF EXISTS uq_price_history_station_fuel_hour;
   `);
-  await pool.query(`
-    ALTER TABLE price_history
-      ADD CONSTRAINT uq_price_history_station_fuel_hour
-      UNIQUE (station_id, fuel_type, recorded_at);
-  `);
 
-  // Index for fast lookups by station
+  // Index for fast lookups by station + fuel (Sprint 2 spec)
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_ph_station_fuel ON price_history(station_id, fuel_type);'
+  );
+
+  // Index for time-based queries / retention
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_ph_recorded ON price_history(recorded_at);'
+  );
+
+  // Legacy indexes (kept for back-compat with older deployments)
   await pool.query(
     'CREATE INDEX IF NOT EXISTS idx_price_history_station ON price_history(station_id);'
   );
-
-  // Index for time-based queries
   await pool.query(
     'CREATE INDEX IF NOT EXISTS idx_price_history_recorded_at ON price_history(recorded_at);'
   );
