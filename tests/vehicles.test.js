@@ -241,6 +241,34 @@ test('GET /lookup returns 429 when per-IP rate limit exceeded', async () => {
   } finally { server.close(); }
 });
 
+test('GET /insurance-check returns MIB Navigate metadata with expected shape', async () => {
+  const { server, port } = await startApp();
+  try {
+    const r = await fetchJson(port, '/api/v1/vehicles/insurance-check');
+    assert.equal(r.status, 200);
+    assert.equal(r.json.provider, 'MIB Navigate');
+    assert.equal(r.json.url, 'https://enquiry.navigate.mib.org.uk/checkyourvehicle');
+    assert.equal(r.json.contactUrl, 'https://enquiry.navigate.mib.org.uk/contact-us');
+    assert.ok(Array.isArray(r.json.checkTypes));
+    assert.equal(r.json.checkTypes.length, 2);
+    assert.deepEqual(
+      r.json.checkTypes.map((c) => c.type).sort(),
+      ['personal', 'third_party'],
+    );
+    assert.ok(r.json.terms && r.json.terms.length > 0);
+    assert.ok(r.json.disclaimer && r.json.disclaimer.length > 0);
+  } finally { server.close(); }
+});
+
+test('GET /insurance-check sets 24h Cache-Control header', async () => {
+  const { server, port } = await startApp();
+  try {
+    const r = await fetchJson(port, '/api/v1/vehicles/insurance-check');
+    assert.equal(r.status, 200);
+    assert.match(r.headers['cache-control'] || '', /max-age=86400/);
+  } finally { server.close(); }
+});
+
 test('GET /lookup gracefully degrades when one API fails', async () => {
   delete process.env.DVLA_API_KEY;
   delete process.env.DVSA_MOT_API_KEY;
