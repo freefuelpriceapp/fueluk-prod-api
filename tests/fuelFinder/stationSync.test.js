@@ -55,15 +55,38 @@ test('syncStations stops on empty batch', async () => {
   assert.equal(result.stationsUpserted, 0);
 });
 
-test('syncStations records error and stops when API throws', async () => {
+test('syncStations records error and stops after MAX_CONSECUTIVE_ERRORS when API throws', async () => {
   const pool = makePool();
+  let calls = 0;
   const apiClient = {
-    getStationsBatch: async () => { throw new Error('boom'); },
+    getStationsBatch: async () => { calls++; throw new Error('boom'); },
   };
   const result = await syncStations({ apiClient, pool });
-  assert.equal(result.errors.length >= 1, true);
+  // With MAX_CONSECUTIVE_ERRORS=3, it should retry 3 times before aborting
+  assert.equal(calls, 3);
+  assert.equal(result.errors.length, 3);
   assert.equal(result.errors[0].message, 'boom');
   assert.equal(result.stationsUpserted, 0);
+});
+
+test('syncStations continues past a single batch failure to later batches', async () => {
+  const pool = makePool();
+  const goodBatch1 = Array.from({ length: 500 }, (_, i) => makeStation(`a${i}`));
+  const goodBatch3 = Array.from({ length: 3 }, (_, i) => makeStation(`c${i}`));
+  let call = 0;
+  const apiClient = {
+    getStationsBatch: async () => {
+      call++;
+      if (call === 1) return goodBatch1;
+      if (call === 2) throw new Error('transient 403');
+      if (call === 3) return goodBatch3;
+      return [];
+    },
+  };
+  const result = await syncStations({ apiClient, pool });
+  assert.equal(result.stationsUpserted, 503, 'later batch processed despite middle failure');
+  assert.equal(result.errors.length, 1);
+  assert.equal(result.errors[0].batch, 2);
 });
 
 test('syncStations skips stations missing node_id but keeps going', async () => {

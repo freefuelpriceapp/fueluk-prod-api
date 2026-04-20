@@ -98,7 +98,7 @@ test('syncPrices advances state to the highest price_last_updated seen', async (
       ],
     },
   ]]);
-  const result = await syncPrices({ apiClient, pool });
+  const result = await syncPrices({ apiClient, pool, delayMs: 0 });
   assert.equal(result.stationsUpdated, 2);
   assert.equal(result.nextEffectiveTs, '2026-04-19T11:30:00.000Z');
   assert.equal(pool.getState().last_price_effective_ts, '2026-04-19T11:30:00.000Z');
@@ -106,22 +106,6 @@ test('syncPrices advances state to the highest price_last_updated seen', async (
 
 test('syncPrices tolerates API errors on a batch without losing prior progress', async () => {
   const pool = makePool({ last_price_effective_ts: '2026-04-19T10:00:00.000Z' });
-  const apiClient = {
-    calls: [],
-    getPricesBatch: async (n) => {
-      apiClient.calls.push(n);
-      if (n === 1) {
-        return [{
-          node_id: 's1',
-          fuel_prices: [{ fuel_type: 'E10', price: 129.9, price_last_updated: '2026-04-19T11:00:00Z' }],
-        }];
-      }
-      throw new Error('boom');
-    },
-  };
-  // Need to fill exactly BATCH_SIZE=500 items so loop continues. Simulate
-  // that by forcing large batch then failure:
-  // Simpler: just reach the error path with a batch of 500 items.
   const bigFirst = Array.from({ length: 500 }, (_, i) => ({
     node_id: `s${i}`,
     fuel_prices: [{ fuel_type: 'E10', price: 130 + i * 0.01, price_last_updated: '2026-04-19T11:00:00Z' }],
@@ -134,7 +118,45 @@ test('syncPrices tolerates API errors on a batch without losing prior progress',
       throw new Error('boom');
     },
   };
-  const result = await syncPrices({ apiClient: api2, pool });
+  const result = await syncPrices({ apiClient: api2, pool, delayMs: 0 });
   assert.equal(result.errors.length >= 1, true);
   assert.ok(result.stationsUpdated > 0, 'first batch prices still applied');
+});
+
+test('syncPrices continues past a single batch failure to later batches', async () => {
+  const pool = makePool({ last_price_effective_ts: '2026-04-19T10:00:00.000Z' });
+  const bigBatch = (prefix) => Array.from({ length: 500 }, (_, i) => ({
+    node_id: `${prefix}${i}`,
+    fuel_prices: [{ fuel_type: 'E10', price: 130 + i * 0.01, price_last_updated: '2026-04-19T11:00:00Z' }],
+  }));
+  const batch1 = bigBatch('a');
+  const batch3 = [{
+    node_id: 'late',
+    fuel_prices: [{ fuel_type: 'E10', price: 145.5, price_last_updated: '2026-04-19T11:45:00Z' }],
+  }];
+  let n = 0;
+  const apiClient = {
+    getPricesBatch: async () => {
+      n++;
+      if (n === 1) return batch1;
+      if (n === 2) throw new Error('transient 403');
+      if (n === 3) return batch3;
+      return [];
+    },
+  };
+  const result = await syncPrices({ apiClient, pool, delayMs: 0 });
+  // batch1 had 500 price-updating rows + batch3 had 1 — should total 501
+  assert.equal(result.stationsUpdated, 501, 'batch 3 processed despite batch 2 failing');
+  assert.equal(result.errors.filter((e) => e.batch === 2).length, 1);
+});
+
+test('syncPrices aborts after MAX_CONSECUTIVE_ERRORS consecutive failures', async () => {
+  const pool = makePool({ last_price_effective_ts: '2026-04-19T10:00:00.000Z' });
+  let calls = 0;
+  const apiClient = {
+    getPricesBatch: async () => { calls++; throw new Error('boom'); },
+  };
+  const result = await syncPrices({ apiClient, pool, delayMs: 0 });
+  assert.equal(calls, 3, 'should stop after 3 consecutive errors');
+  assert.equal(result.errors.length, 3);
 });

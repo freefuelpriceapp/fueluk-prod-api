@@ -12,6 +12,7 @@ const { stationToRow } = require('./mapping');
 
 const BATCH_SIZE = 500;
 const MAX_BATCHES = 100; // hard ceiling: 50k stations — feed is ~8.5k
+const MAX_CONSECUTIVE_ERRORS = 3;
 
 async function upsertStation(pool, row) {
   await pool.query(
@@ -85,6 +86,7 @@ async function syncStations({ apiClient, pool = getPool() }) {
   let stationsSeen = 0;
   let stationsUpserted = 0;
   const errors = [];
+  let consecutiveErrors = 0;
 
   while (batchNumber <= MAX_BATCHES) {
     let batch;
@@ -93,9 +95,16 @@ async function syncStations({ apiClient, pool = getPool() }) {
     } catch (err) {
       console.error(`[FuelFinder] Station batch ${batchNumber} failed:`, err.message);
       errors.push({ batch: batchNumber, message: err.message });
-      break;
+      consecutiveErrors++;
+      if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+        console.error(`[FuelFinder] Aborting station sync after ${consecutiveErrors} consecutive batch failures`);
+        break;
+      }
+      batchNumber++;
+      continue;
     }
 
+    consecutiveErrors = 0;
     if (!batch || batch.length === 0) break;
     stationsSeen += batch.length;
 

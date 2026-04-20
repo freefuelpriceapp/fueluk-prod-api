@@ -22,6 +22,7 @@ const MAX_BATCHES = 200;
 // only the last hour.
 const FIRST_RUN_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000;
 const DELAY_BETWEEN_BATCHES_MS = 2000;
+const MAX_CONSECUTIVE_ERRORS = 3;
 
 async function readState(pool) {
   const { rows } = await pool.query(
@@ -71,7 +72,7 @@ async function applyPriceUpdates(pool, nodeId, updates) {
  * syncPrices — pulls incremental price updates and writes them back.
  * @param {{ apiClient: object, pool?: object, now?: () => Date }} deps
  */
-async function syncPrices({ apiClient, pool = getPool(), now = () => new Date() }) {
+async function syncPrices({ apiClient, pool = getPool(), now = () => new Date(), delayMs = DELAY_BETWEEN_BATCHES_MS }) {
   if (!apiClient) throw new Error('syncPrices requires apiClient');
 
   const state = await readState(pool);
@@ -88,6 +89,7 @@ async function syncPrices({ apiClient, pool = getPool(), now = () => new Date() 
     ? new Date(state.last_price_effective_ts)
     : null;
   const errors = [];
+  let consecutiveErrors = 0;
 
   while (batchNumber <= MAX_BATCHES) {
     let batch;
@@ -96,9 +98,17 @@ async function syncPrices({ apiClient, pool = getPool(), now = () => new Date() 
     } catch (err) {
       console.error(`[FuelFinder] Price batch ${batchNumber} failed:`, err.message);
       errors.push({ batch: batchNumber, message: err.message });
-      break;
+      consecutiveErrors++;
+      if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+        console.error(`[FuelFinder] Aborting price sync after ${consecutiveErrors} consecutive batch failures`);
+        break;
+      }
+      batchNumber++;
+      await new Promise((r) => setTimeout(r, delayMs));
+      continue;
     }
 
+    consecutiveErrors = 0;
     if (!batch || batch.length === 0) break;
     pricesSeen += batch.length;
 
