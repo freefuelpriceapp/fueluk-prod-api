@@ -32,12 +32,14 @@ router.get('/:stationId/history', async (req, res, next) => {
     }
 
     const { stationId } = req.params;
-    const days = Math.min(parseInt(req.query.days ?? '7', 10), 90);
-    const fuel = req.query.fuel || null; // petrol | diesel | e10 | null (all)
+    const days = Math.min(parseInt(req.query.days ?? '30', 10), 90);
+    // Accept ?fuel_type=... per Sprint 2 spec; keep ?fuel= as a back-compat alias.
+    const fuel = req.query.fuel_type || req.query.fuel || null;
 
     const pool = getPool();
 
-    // Build query – optionally filter by fuel_type
+    // One row per (day, fuel_type) with the last-recorded price of the day.
+    // DISTINCT ON keeps Postgres doing the grouping; no app-side de-dup needed.
     const params = [stationId, days];
     let fuelFilter = '';
     if (fuel) {
@@ -46,21 +48,38 @@ router.get('/:stationId/history', async (req, res, next) => {
     }
 
     const result = await pool.query(
-      `SELECT recorded_at, fuel_type, price_pence
+      `SELECT DISTINCT ON (day, fuel_type)
+              to_char(date_trunc('day', recorded_at), 'YYYY-MM-DD') AS date,
+              date_trunc('day', recorded_at) AS day,
+              fuel_type,
+              price_pence,
+              COALESCE(source, 'gov') AS source
          FROM price_history
         WHERE station_id = $1
           AND recorded_at >= NOW() - INTERVAL '1 day' * $2
           ${fuelFilter}
-        ORDER BY recorded_at ASC`,
+        ORDER BY day DESC, fuel_type, recorded_at DESC`,
       params
     );
 
+    const history = result.rows.map((r) => ({
+      date: r.date,
+      fuel_type: r.fuel_type,
+      price_pence: r.price_pence == null ? null : Number(r.price_pence),
+      source: r.source,
+    }));
+
+    // Spec: if a fuel_type is specified, omit fuel_type from each entry.
+    const shapedHistory = fuel
+      ? history.map(({ fuel_type, ...rest }) => rest)
+      : history;
+
     return res.json({
-      stationId,
+      station_id: stationId,
+      fuel_type: fuel || 'all',
       days,
-      fuel: fuel || 'all',
-      count: result.rows.length,
-      history: result.rows,
+      count: shapedHistory.length,
+      history: shapedHistory,
     });
   } catch (err) {
     next(err);

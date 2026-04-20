@@ -15,7 +15,9 @@ const { isEnabled } = require('../utils/featureFlags');
  */
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
-const NOTIFY_COOLDOWN_HOURS = 24;
+// Sprint 2: notify at most once per 6 hours for the same station+fuel+device
+// so a prolonged price dip doesn't spam the user's lock screen.
+const NOTIFY_COOLDOWN_HOURS = parseInt(process.env.ALERT_COOLDOWN_HOURS || '6', 10);
 
 /**
  * sendExpoPushNotification

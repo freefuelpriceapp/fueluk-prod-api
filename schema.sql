@@ -56,18 +56,23 @@ CREATE TABLE IF NOT EXISTS price_history (
   id           BIGSERIAL PRIMARY KEY,
   station_id   VARCHAR(50) NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
   fuel_type    VARCHAR(10) NOT NULL,
-  price_pence  DECIMAL(5, 1),
-  recorded_at  TIMESTAMP NOT NULL DEFAULT date_trunc('hour', NOW())
+  price_pence  DECIMAL(6, 1),
+  source       VARCHAR(30) DEFAULT 'gov',
+  recorded_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Unique constraint: one snapshot per station per fuel per hour
-ALTER TABLE price_history
-  DROP CONSTRAINT IF EXISTS uq_price_history_station_fuel_hour;
-ALTER TABLE price_history
-  ADD CONSTRAINT uq_price_history_station_fuel_hour
-  UNIQUE (station_id, fuel_type, recorded_at);
+-- Back-compat: older deployments did not have a `source` column.
+ALTER TABLE price_history ADD COLUMN IF NOT EXISTS source VARCHAR(30) DEFAULT 'gov';
 
--- Index for fast history lookups
+-- Index for fast history lookups by station + fuel
+CREATE INDEX IF NOT EXISTS idx_ph_station_fuel
+  ON price_history(station_id, fuel_type);
+
+-- Index for time-based queries / retention sweeps
+CREATE INDEX IF NOT EXISTS idx_ph_recorded
+  ON price_history(recorded_at);
+
+-- Legacy index kept for back-compat
 CREATE INDEX IF NOT EXISTS idx_price_history_station_id
   ON price_history(station_id, recorded_at DESC);
 
