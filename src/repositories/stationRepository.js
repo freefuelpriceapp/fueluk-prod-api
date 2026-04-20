@@ -1,5 +1,6 @@
 'use strict';
 const { getPool } = require('../config/db');
+const { normalizeBrandKey, canonicalBrandName, normalizedKeysForBrandFilter, BRAND_ALIASES } = require('../utils/brandNormalizer');
 
 /**
  * stationRepository.js — Sprint 1 + Sprint 10 search upgrade + Sprint 11 smart search + Sprint 12 brand filter
@@ -23,8 +24,14 @@ async function getNearbyStations({ lat, lng, radiusKm = 5, fuel = 'petrol', limi
   const params = [lat, lng, radiusM, limit];
   let brandFilter = '';
   if (brand) {
-    params.push(brand);
-    brandFilter = `AND LOWER(brand) = LOWER($${params.length})`;
+    const keys = normalizedKeysForBrandFilter(brand);
+    if (keys.length) {
+      const placeholders = keys.map(k => {
+        params.push(k);
+        return `$${params.length}`;
+      }).join(', ');
+      brandFilter = `AND REGEXP_REPLACE(UPPER(brand), '[^A-Z0-9]', '', 'g') IN (${placeholders})`;
+    }
   }
   const result = await pool.query(
     `SELECT id, brand, name, address, postcode, lat, lng,
@@ -198,36 +205,43 @@ async function getStationById(id) {
 async function getDistinctBrands() {
   const pool = getPool();
   const result = await pool.query(
-    `SELECT
-       UPPER(TRIM(brand)) AS brand_key,
-       TRIM(brand) AS display_name,
-       COUNT(*) AS station_count
+    `SELECT TRIM(brand) AS display_name, COUNT(*) AS station_count
      FROM stations
      WHERE brand IS NOT NULL
        AND TRIM(brand) != ''
        AND (permanent_closure IS NOT TRUE)
        AND name NOT LIKE 'QA %'
        AND name NOT LIKE 'Test %'
-     GROUP BY brand_key, display_name
-     ORDER BY station_count DESC, display_name ASC`
+     GROUP BY display_name`
   );
 
   const merged = new Map();
   for (const row of result.rows) {
-    const key = row.brand_key;
+    const rawName = row.display_name;
+    const count = parseInt(row.station_count, 10);
+    const key = normalizeBrandKey(rawName);
+    if (!key) continue;
+    const aliasCanonical = BRAND_ALIASES[key];
     const existing = merged.get(key);
-    if (!existing || parseInt(row.station_count) > parseInt(existing.station_count)) {
+    if (!existing) {
       merged.set(key, {
-        name: row.display_name,
-        count: existing ? parseInt(existing.count) + parseInt(row.station_count) : parseInt(row.station_count),
+        name: aliasCanonical || rawName,
+        count,
+        topVariantCount: count,
+        aliasLocked: Boolean(aliasCanonical),
       });
     } else {
-      existing.count += parseInt(row.station_count);
+      existing.count += count;
+      if (!existing.aliasLocked && count > existing.topVariantCount) {
+        existing.name = rawName;
+        existing.topVariantCount = count;
+      }
     }
   }
 
   const brands = [...merged.values()]
     .filter(b => b.count >= 3)
+    .map(b => ({ name: b.name, count: b.count }))
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 
   return brands;
