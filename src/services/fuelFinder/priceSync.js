@@ -17,9 +17,11 @@ const { pricesToColumnUpdates, SOURCE_TAG } = require('./mapping');
 
 const BATCH_SIZE = 500;
 const MAX_BATCHES = 200;
-// Safety net: if we've never synced, start from N hours ago so the first
-// run isn't a full firehose. 1h matches the recommended cadence at scale.
-const FIRST_RUN_LOOKBACK_MS = 60 * 60 * 1000;
+// Safety net: if we've never synced, start from N days ago so the first
+// successful run fetches all available historical prices rather than
+// only the last hour.
+const FIRST_RUN_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000;
+const DELAY_BETWEEN_BATCHES_MS = 2000;
 
 async function readState(pool) {
   const { rows } = await pool.query(
@@ -118,6 +120,7 @@ async function syncPrices({ apiClient, pool = getPool(), now = () => new Date() 
     }
 
     if (batch.length < BATCH_SIZE) break;
+    await new Promise((r) => setTimeout(r, DELAY_BETWEEN_BATCHES_MS));
     batchNumber++;
   }
 

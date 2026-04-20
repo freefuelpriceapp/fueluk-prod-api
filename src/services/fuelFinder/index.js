@@ -101,6 +101,9 @@ function scheduleFuelFinder() {
 
   if (process.env.FUEL_FINDER_RUN_ON_BOOT === 'true') {
     runStationSyncOnce().catch((err) => console.error('[FuelFinder] boot station err:', err.message));
+    setTimeout(() => {
+      runPriceSyncOnce().catch((err) => console.error('[FuelFinder] boot price err:', err.message));
+    }, 3 * 60 * 1000);
   }
 
   return { enabled: true, stationCron, priceCron };
