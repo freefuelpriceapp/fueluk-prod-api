@@ -101,7 +101,14 @@ function scheduleFuelFinder() {
 
   if (process.env.FUEL_FINDER_RUN_ON_BOOT === 'true') {
     runStationSyncOnce().catch((err) => console.error('[FuelFinder] boot station err:', err.message));
-    setTimeout(() => {
+    setTimeout(async () => {
+      try {
+        const { getPool } = require('../../config/db');
+        await getPool().query('UPDATE fuel_finder_sync_state SET last_price_effective_ts = NULL WHERE id = 1');
+        console.log('[FuelFinder] Reset price sync state for full boot fetch');
+      } catch (e) {
+        console.error('[FuelFinder] Could not reset price sync state:', e.message);
+      }
       runPriceSyncOnce().catch((err) => console.error('[FuelFinder] boot price err:', err.message));
     }, 3 * 60 * 1000);
   }

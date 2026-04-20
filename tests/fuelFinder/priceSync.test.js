@@ -71,14 +71,12 @@ test('syncPrices passes stored effective timestamp on subsequent runs', async ()
   assert.equal(apiClient.calls[0].effectiveStart, '2026-04-19T10:00:00.000Z');
 });
 
-test('syncPrices uses a 30d lookback on first run', async () => {
+test('syncPrices omits effective timestamp on first run for a full fetch', async () => {
   const pool = makePool(null);
   const apiClient = makeApiClient([[]]);
   const fakeNow = new Date('2026-04-19T12:00:00Z');
   await syncPrices({ apiClient, pool, now: () => fakeNow });
-  const isoSent = apiClient.calls[0].effectiveStart;
-  const diff = fakeNow.getTime() - new Date(isoSent).getTime();
-  assert.equal(diff, 30 * 24 * 60 * 60 * 1000);
+  assert.equal(apiClient.calls[0].effectiveStart, null);
 });
 
 test('syncPrices advances state to the highest price_last_updated seen', async () => {

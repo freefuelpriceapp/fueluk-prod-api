@@ -76,11 +76,14 @@ async function syncPrices({ apiClient, pool = getPool(), now = () => new Date(),
   if (!apiClient) throw new Error('syncPrices requires apiClient');
 
   const state = await readState(pool);
+  // NULL state = first sync: omit timestamp so the API returns ALL prices
+  // for ALL stations. Non-null state = incremental: pass timestamp to get
+  // only prices that changed since the last successful run.
   let effectiveStart = state && state.last_price_effective_ts
     ? new Date(state.last_price_effective_ts).toISOString()
-    : new Date(now().getTime() - FIRST_RUN_LOOKBACK_MS).toISOString();
+    : null;
 
-  console.log(`[FuelFinder] Starting price sync from ${effectiveStart}...`);
+  console.log(`[FuelFinder] Starting price sync from ${effectiveStart || 'beginning (full sync)'}...`);
 
   let batchNumber = 1;
   let pricesSeen = 0;
