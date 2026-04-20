@@ -198,14 +198,39 @@ async function getStationById(id) {
 async function getDistinctBrands() {
   const pool = getPool();
   const result = await pool.query(
-    `SELECT brand, COUNT(*)::int AS station_count
-       FROM stations
-      WHERE brand IS NOT NULL AND brand != ''
-      GROUP BY brand
-     HAVING COUNT(*) >= 3
-      ORDER BY COUNT(*) DESC, brand ASC`
+    `SELECT
+       UPPER(TRIM(brand)) AS brand_key,
+       TRIM(brand) AS display_name,
+       COUNT(*) AS station_count
+     FROM stations
+     WHERE brand IS NOT NULL
+       AND TRIM(brand) != ''
+       AND (permanent_closure IS NOT TRUE)
+       AND name NOT LIKE 'QA %'
+       AND name NOT LIKE 'Test %'
+     GROUP BY brand_key, display_name
+     ORDER BY station_count DESC, display_name ASC`
   );
-  return result.rows.map(r => ({ name: r.brand, count: r.station_count }));
+
+  const merged = new Map();
+  for (const row of result.rows) {
+    const key = row.brand_key;
+    const existing = merged.get(key);
+    if (!existing || parseInt(row.station_count) > parseInt(existing.station_count)) {
+      merged.set(key, {
+        name: row.display_name,
+        count: existing ? parseInt(existing.count) + parseInt(row.station_count) : parseInt(row.station_count),
+      });
+    } else {
+      existing.count += parseInt(row.station_count);
+    }
+  }
+
+  const brands = [...merged.values()]
+    .filter(b => b.count >= 3)
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+
+  return brands;
 }
 
 async function getLastUpdated() {
