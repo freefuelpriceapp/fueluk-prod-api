@@ -133,6 +133,32 @@ function mockVehicleFor(reg) {
   };
 }
 
+const INSURANCE_CHECK_METADATA = {
+  provider: 'MIB Navigate',
+  url: 'https://enquiry.navigate.mib.org.uk/checkyourvehicle',
+  description: 'Check if your vehicle is showing as insured on the Motor Insurance Database',
+  checkTypes: [
+    {
+      type: 'personal',
+      label: 'Personal check',
+      description: 'Vehicle is owned, registered, or insured by you or your employer',
+    },
+    {
+      type: 'third_party',
+      label: 'Third party check',
+      description: 'Vehicle is owned or insured by someone else',
+    },
+  ],
+  terms: "You must live in the UK. You can only check vehicles registered, owned, or insured by you/your employer, or that you're allowed to drive. It's an offence to check otherwise.",
+  disclaimer: 'It may take 7 days or more for new policies to appear. This check is not proof of insurance status.',
+  contactUrl: 'https://enquiry.navigate.mib.org.uk/contact-us',
+};
+
+router.get('/insurance-check', (req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  return res.json(INSURANCE_CHECK_METADATA);
+});
+
 router.get('/lookup', vehicleLimiter, async (req, res, next) => {
   try {
     const reg = normaliseReg(req.query.reg);
@@ -182,3 +208,4 @@ module.exports.yearFromAgeIdentifier = yearFromAgeIdentifier;
 module.exports.mockVehicleFor = mockVehicleFor;
 module.exports.clearCache = clearCache;
 module.exports._cache = cache;
+module.exports.INSURANCE_CHECK_METADATA = INSURANCE_CHECK_METADATA;
