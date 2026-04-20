@@ -167,6 +167,28 @@ test('direct mode hits fuel-finder.service.gov.uk when proxyUrl not set', async 
   assert.equal(http.calls[0].opts.headers['x-proxy-secret'], undefined);
 });
 
+test('request timeout defaults to 90s and is configurable', async () => {
+  const http = makeHttp([{ body: [] }, { body: [] }]);
+  const defaultClient = createApiClient({
+    tokenManager: makeTokenManager(),
+    httpClient: http,
+    sleepFn: async () => {},
+    requestDelayMs: 0,
+  });
+  await defaultClient.getStationsBatch(1);
+  assert.equal(http.calls[0].opts.timeout, 90000);
+
+  const customClient = createApiClient({
+    tokenManager: makeTokenManager(),
+    httpClient: http,
+    sleepFn: async () => {},
+    requestDelayMs: 0,
+    requestTimeoutMs: 12345,
+  });
+  await customClient.getStationsBatch(1);
+  assert.equal(http.calls[1].opts.timeout, 12345);
+});
+
 test('request delay enforces spacing between calls', async () => {
   const waits = [];
   const http = makeHttp([

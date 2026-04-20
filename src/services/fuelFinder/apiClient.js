@@ -23,6 +23,7 @@ const PROXY_PRICES_PATH = '/prices';
 
 // Fuel Finder docs: 120 req/min, 10k req/day, recommended 5s between batches.
 const DEFAULT_REQUEST_DELAY_MS = 5000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 90000;
 const MAX_RETRIES = 3;
 
 function sleep(ms) {
@@ -46,6 +47,7 @@ function createApiClient({
   proxySecret = process.env.FUEL_FINDER_PROXY_SECRET || null,
   httpClient = axios,
   requestDelayMs = Number(process.env.FUEL_FINDER_REQUEST_DELAY_MS) || DEFAULT_REQUEST_DELAY_MS,
+  requestTimeoutMs = Number(process.env.FUEL_FINDER_REQUEST_TIMEOUT_MS) || DEFAULT_REQUEST_TIMEOUT_MS,
   sleepFn = sleep,
 } = {}) {
   if (!tokenManager) throw new Error('apiClient requires a tokenManager');
@@ -81,7 +83,7 @@ function createApiClient({
       const resp = await httpClient.get(buildUrl(kind), {
         params,
         headers: buildHeaders(token),
-        timeout: 30000,
+        timeout: requestTimeoutMs,
       });
       return resp.data;
     } catch (err) {
