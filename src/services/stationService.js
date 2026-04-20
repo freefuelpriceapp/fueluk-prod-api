@@ -14,10 +14,10 @@ const DEFAULT_SEARCH_RADIUS_KM = 16;
 const UK_FULL_POSTCODE_RE = /\b(GIR\s*0AA|[A-PR-UWYZ]([0-9]{1,2}|[A-HK-Y][0-9]|[A-HK-Y][0-9]([0-9]|[ABEHMNPRV-Y]))\s*[0-9][ABD-HJLNP-UW-Z]{2})\b/i;
 const UK_OUTCODE_RE = /\b([A-PR-UWYZ]([0-9]{1,2}|[A-HK-Y][0-9]|[A-HK-Y][0-9]([0-9]|[ABEHMNPRV-Y])))\b/i;
 
-async function getNearbyStations({ lat, lon, radius = 5, fuelType, brand }) {
+async function getNearbyStations({ lat, lon, radius = 5, fuelType, brand, limit = 50 }) {
   const radiusKm = parseFloat(radius) * MILES_TO_KM;
   const stations = await stationRepository.getNearbyStations({
-    lat, lng: lon, radiusKm, fuel: fuelType || 'petrol', brand: brand || null,
+    lat, lng: lon, radiusKm, fuel: fuelType || 'petrol', brand: brand || null, limit,
   });
   return stations.map(formatStation);
 }
@@ -29,9 +29,12 @@ async function getDistinctBrands() {
   return [];
 }
 
-async function searchStations({ query, fuelType, limit = 20 }) {
+async function searchStations({ query, fuelType, limit = 20, lat = null, lon = null }) {
   const raw = (query || '').trim();
   if (!raw) return [];
+
+  const latNum = lat != null && !isNaN(Number(lat)) ? Number(lat) : null;
+  const lngNum = lon != null && !isNaN(Number(lon)) ? Number(lon) : null;
 
   const full = raw.match(UK_FULL_POSTCODE_RE);
   if (full) {
@@ -47,14 +50,18 @@ async function searchStations({ query, fuelType, limit = 20 }) {
 
   const tokens = raw.split(/\s+/).filter(t => t.length >= 2).slice(0, 5);
   if (tokens.length && typeof stationRepository.searchStationsTokens === 'function') {
-    const rows = await stationRepository.searchStationsTokens({ tokens, fuelType, limit });
+    const rows = await stationRepository.searchStationsTokens({
+      tokens, fuelType, limit, lat: latNum, lng: lngNum,
+    });
     if (rows && rows.length) return rows.map(formatStation);
   }
 
   const place = await geocodePlace(raw);
   if (place) return nearbyFromPoint(place, fuelType, limit);
 
-  const legacy = await stationRepository.searchStations({ query: raw, fuelType, limit });
+  const legacy = await stationRepository.searchStations({
+    query: raw, fuelType, limit, lat: latNum, lng: lngNum,
+  });
   return (legacy || []).map(formatStation);
 }
 
@@ -64,7 +71,7 @@ async function getStationById(id) {
   return formatStation(station);
 }
 
-async function getCheapestNearby({ lat, lon, radius = 10, fuelType = 'petrol', limit = 5 }) {
+async function getCheapestNearby({ lat, lon, radius = 10, fuelType = 'petrol', limit = 10 }) {
   const radiusKm = parseFloat(radius) * MILES_TO_KM;
   const stations = await stationRepository.getNearbyStations({
     lat, lng: lon, radiusKm, fuel: fuelType, limit,

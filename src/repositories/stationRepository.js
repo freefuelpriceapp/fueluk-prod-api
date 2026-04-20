@@ -16,7 +16,7 @@ function isPostcodeLike(s) {
   return /^[A-Z]{1,2}\d[A-Z\d]?\s*\d?[A-Z]{0,2}$/i.test(String(s).trim());
 }
 
-async function getNearbyStations({ lat, lng, radiusKm = 5, fuel = 'petrol', limit = 20, brand = null }) {
+async function getNearbyStations({ lat, lng, radiusKm = 5, fuel = 'petrol', limit = 50, brand = null }) {
   const pool = getPool();
   const radiusM = radiusKm * 1000;
   const fuelCol = fuel === 'diesel' ? 'diesel_price' : fuel === 'e10' ? 'e10_price' : 'petrol_price';
@@ -35,6 +35,9 @@ async function getNearbyStations({ lat, lng, radiusKm = 5, fuel = 'petrol', limi
       FROM stations
       WHERE ST_DWithin(location::geography, ST_SetSRID(ST_MakePoint($2,$1),4326)::geography, $3)
                 -- Show ALL stations (never hide a station for missing price)
+        AND name NOT LIKE 'QA %'
+        AND name NOT LIKE 'Test %'
+        AND (permanent_closure IS NOT TRUE)
         ${brandFilter}
             ORDER BY ${fuelCol} ASC NULLS LAST, distance_m ASC
       LIMIT $4`,
@@ -43,32 +46,54 @@ async function getNearbyStations({ lat, lng, radiusKm = 5, fuel = 'petrol', limi
   return result.rows;
 }
 
-async function searchStations({ query, fuelType, limit = 20 }) {
+async function searchStations({ query, fuelType, limit = 20, lat = null, lng = null }) {
   const pool = getPool();
-  const params = [`%${query}%`, limit];
+  const params = [`%${query}%`];
   let fuelFilter = '';
   if (fuelType === 'petrol') fuelFilter = 'AND petrol_price IS NOT NULL';
   else if (fuelType === 'diesel') fuelFilter = 'AND diesel_price IS NOT NULL';
   else if (fuelType === 'e10') fuelFilter = 'AND e10_price IS NOT NULL';
+
+  const hasCoords = lat != null && lng != null && !isNaN(Number(lat)) && !isNaN(Number(lng));
+  let orderBy;
+  let distanceSelect = '';
+  if (hasCoords) {
+    params.push(Number(lat));
+    const latIdx = params.length;
+    params.push(Number(lng));
+    const lngIdx = params.length;
+    distanceSelect = `, ST_Distance(location::geography, ST_SetSRID(ST_MakePoint($${lngIdx},$${latIdx}),4326)::geography) AS distance_m`;
+    orderBy = `ST_Distance(location::geography, ST_SetSRID(ST_MakePoint($${lngIdx},$${latIdx}),4326)::geography) ASC`;
+  } else {
+    params.push(query);
+    const qIdx = params.length;
+    orderBy = `CASE WHEN LOWER(brand) = LOWER($${qIdx}) THEN 0 ELSE 1 END, name ASC`;
+  }
+  params.push(limit);
+  const limitIdx = params.length;
   const result = await pool.query(
     `SELECT id, brand, name, address, postcode, lat, lng,
             petrol_price, diesel_price, e10_price, petrol_source, diesel_source, e10_source, last_updated,
             opening_hours, amenities, is_motorway, is_supermarket, temporary_closure, permanent_closure,
             super_unleaded_price, super_unleaded_source, premium_diesel_price, premium_diesel_source, fuel_types
+            ${distanceSelect}
       FROM stations
       WHERE (LOWER(name) LIKE LOWER($1)
           OR LOWER(address) LIKE LOWER($1)
           OR LOWER(brand) LIKE LOWER($1)
           OR LOWER(postcode) LIKE LOWER($1))
+        AND name NOT LIKE 'QA %'
+        AND name NOT LIKE 'Test %'
+        AND (permanent_closure IS NOT TRUE)
       ${fuelFilter}
-      ORDER BY name ASC
-      LIMIT $2`,
+      ORDER BY ${orderBy}
+      LIMIT $${limitIdx}`,
     params
   );
   return result.rows;
 }
 
-async function searchStationsTokens({ tokens, fuelType, limit = 20 }) {
+async function searchStationsTokens({ tokens, fuelType, limit = 20, lat = null, lng = null }) {
   if (!tokens || !tokens.length) return [];
   const pool = getPool();
   const params = [];
@@ -81,6 +106,23 @@ async function searchStationsTokens({ tokens, fuelType, limit = 20 }) {
   if (fuelType === 'petrol') fuelFilter = 'AND petrol_price IS NOT NULL';
   else if (fuelType === 'diesel') fuelFilter = 'AND diesel_price IS NOT NULL';
   else if (fuelType === 'e10') fuelFilter = 'AND e10_price IS NOT NULL';
+
+  const hasCoords = lat != null && lng != null && !isNaN(Number(lat)) && !isNaN(Number(lng));
+  let orderBy;
+  let distanceSelect = '';
+  if (hasCoords) {
+    params.push(Number(lat));
+    const latIdx = params.length;
+    params.push(Number(lng));
+    const lngIdx = params.length;
+    distanceSelect = `, ST_Distance(location::geography, ST_SetSRID(ST_MakePoint($${lngIdx},$${latIdx}),4326)::geography) AS distance_m`;
+    orderBy = `ST_Distance(location::geography, ST_SetSRID(ST_MakePoint($${lngIdx},$${latIdx}),4326)::geography) ASC`;
+  } else {
+    const joined = tokens.join(' ');
+    params.push(joined);
+    const qIdx = params.length;
+    orderBy = `CASE WHEN LOWER(brand) = LOWER($${qIdx}) THEN 0 ELSE 1 END, name ASC`;
+  }
   params.push(limit);
   const limitP = `$${params.length}`;
   const result = await pool.query(
@@ -88,9 +130,13 @@ async function searchStationsTokens({ tokens, fuelType, limit = 20 }) {
             petrol_price, diesel_price, e10_price, petrol_source, diesel_source, e10_source, last_updated,
             opening_hours, amenities, is_motorway, is_supermarket, temporary_closure, permanent_closure,
             super_unleaded_price, super_unleaded_source, premium_diesel_price, premium_diesel_source, fuel_types
+            ${distanceSelect}
       FROM stations
       WHERE ${clauses} ${fuelFilter}
-      ORDER BY name ASC
+        AND name NOT LIKE 'QA %'
+        AND name NOT LIKE 'Test %'
+        AND (permanent_closure IS NOT TRUE)
+      ORDER BY ${orderBy}
       LIMIT ${limitP}`,
     params
   );
@@ -118,6 +164,9 @@ async function searchStationsSmart({ query, fuelType, limit = 20 }) {
         WHERE (UPPER(postcode) = $1
             OR REPLACE(UPPER(postcode),' ','') = $2
             OR UPPER(postcode) LIKE $3)
+          AND name NOT LIKE 'QA %'
+          AND name NOT LIKE 'Test %'
+          AND (permanent_closure IS NOT TRUE)
           ${fuelFilter}
         ORDER BY
           CASE WHEN UPPER(postcode)=$1 THEN 0
@@ -149,9 +198,14 @@ async function getStationById(id) {
 async function getDistinctBrands() {
   const pool = getPool();
   const result = await pool.query(
-    `SELECT DISTINCT brand FROM stations WHERE brand IS NOT NULL AND brand != '' ORDER BY brand ASC`
+    `SELECT brand, COUNT(*)::int AS station_count
+       FROM stations
+      WHERE brand IS NOT NULL AND brand != ''
+      GROUP BY brand
+     HAVING COUNT(*) >= 3
+      ORDER BY COUNT(*) DESC, brand ASC`
   );
-  return result.rows.map(r => r.brand);
+  return result.rows.map(r => ({ name: r.brand, count: r.station_count }));
 }
 
 async function getLastUpdated() {
