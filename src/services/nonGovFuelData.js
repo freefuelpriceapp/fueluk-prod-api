@@ -107,8 +107,8 @@ function parsePrice(text) {
   if (!text) return null;
   const cleaned = text.replace(/[^0-9.]/g, '');
   const val = parseFloat(cleaned);
-  if (isNaN(val) || val < 100 || val > 250) return null;
-  return val / 10; // convert pence to DB format (152.7p -> 15.27)
+  if (isNaN(val) || val < 50 || val > 400) return null;
+  return Math.round(val * 10) / 10; // pence/litre, keep 1 decimal place
 }
 
 /** Normalise a string for fuzzy comparison. */

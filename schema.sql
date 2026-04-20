@@ -10,9 +10,9 @@ CREATE TABLE IF NOT EXISTS stations (
   postcode VARCHAR(10),
   lat DECIMAL(10, 7),
   lng DECIMAL(10, 7),
-  petrol_price DECIMAL(5, 1),
-  diesel_price DECIMAL(5, 1),
-  e10_price DECIMAL(5, 1),
+  petrol_price DECIMAL(6, 1),
+  diesel_price DECIMAL(6, 1),
+  e10_price DECIMAL(6, 1),
     petrol_source VARCHAR(20) DEFAULT 'gov',
   diesel_source VARCHAR(20) DEFAULT 'gov',
   e10_source VARCHAR(20) DEFAULT 'gov',
@@ -81,7 +81,7 @@ CREATE TABLE IF NOT EXISTS price_alerts (
   id                BIGSERIAL PRIMARY KEY,
   station_id        VARCHAR(50) NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
   fuel_type         VARCHAR(10) NOT NULL,
-  threshold_pence   DECIMAL(5, 1) NOT NULL,
+  threshold_pence   DECIMAL(6, 1) NOT NULL,
   device_token      VARCHAR(500) NOT NULL,
   platform          VARCHAR(20) NOT NULL DEFAULT 'unknown',
   active            BOOLEAN NOT NULL DEFAULT true,
@@ -149,7 +149,7 @@ CREATE TABLE IF NOT EXISTS non_gov_prices (
   id            BIGSERIAL PRIMARY KEY,
   station_id    VARCHAR(50) NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
   fuel_type     VARCHAR(10) NOT NULL,
-  price_pence   DECIMAL(5, 1),
+  price_pence   DECIMAL(6, 1),
   source        VARCHAR(100) NOT NULL,
   scraped_at    TIMESTAMP NOT NULL DEFAULT NOW()
 );
@@ -179,9 +179,9 @@ ALTER TABLE stations ADD COLUMN IF NOT EXISTS permanent_closure BOOLEAN DEFAULT 
 ALTER TABLE stations ADD COLUMN IF NOT EXISTS opening_hours JSONB;
 ALTER TABLE stations ADD COLUMN IF NOT EXISTS amenities JSONB;
 ALTER TABLE stations ADD COLUMN IF NOT EXISTS fuel_types JSONB;
-ALTER TABLE stations ADD COLUMN IF NOT EXISTS super_unleaded_price DECIMAL(5, 1);
+ALTER TABLE stations ADD COLUMN IF NOT EXISTS super_unleaded_price DECIMAL(6, 1);
 ALTER TABLE stations ADD COLUMN IF NOT EXISTS super_unleaded_source VARCHAR(30);
-ALTER TABLE stations ADD COLUMN IF NOT EXISTS premium_diesel_price DECIMAL(5, 1);
+ALTER TABLE stations ADD COLUMN IF NOT EXISTS premium_diesel_price DECIMAL(6, 1);
 ALTER TABLE stations ADD COLUMN IF NOT EXISTS premium_diesel_source VARCHAR(30);
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_stations_fuel_finder_node_id

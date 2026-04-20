@@ -274,6 +274,30 @@ async function runMigrations() {
     INSERT INTO fuel_finder_sync_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING
   `);
 
+  // Sprint 16: Price-scaling bug fix.
+  // CMA brand JSON feeds publish prices directly in pence/litre (e.g. 152.9),
+  // but earlier code divided by 10 before writing, so stored values were
+  // 1/10th of the correct figure (13.7 instead of 137.0). Fuel Finder rows
+  // were already correct. Widen columns to DECIMAL(6,1) and scale up any
+  // rows still below the realistic pump range so the dataset is consistent.
+  await pool.query(`ALTER TABLE stations ALTER COLUMN petrol_price TYPE DECIMAL(6, 1)`);
+  await pool.query(`ALTER TABLE stations ALTER COLUMN diesel_price TYPE DECIMAL(6, 1)`);
+  await pool.query(`ALTER TABLE stations ALTER COLUMN e10_price TYPE DECIMAL(6, 1)`);
+  await pool.query(`ALTER TABLE stations ALTER COLUMN super_unleaded_price TYPE DECIMAL(6, 1)`);
+  await pool.query(`ALTER TABLE stations ALTER COLUMN premium_diesel_price TYPE DECIMAL(6, 1)`);
+  await pool.query(`ALTER TABLE price_alerts ALTER COLUMN threshold_pence TYPE DECIMAL(6, 1)`);
+  await pool.query(`ALTER TABLE price_reports ALTER COLUMN price_pence TYPE DECIMAL(6, 1)`);
+  await pool.query(`ALTER TABLE non_gov_prices ALTER COLUMN price_pence TYPE DECIMAL(6, 1)`);
+
+  // Idempotent: only rows below 50p/l are considered under-scaled.
+  await pool.query(`UPDATE stations SET petrol_price = petrol_price * 10 WHERE petrol_price IS NOT NULL AND petrol_price < 50`);
+  await pool.query(`UPDATE stations SET diesel_price = diesel_price * 10 WHERE diesel_price IS NOT NULL AND diesel_price < 50`);
+  await pool.query(`UPDATE stations SET e10_price = e10_price * 10 WHERE e10_price IS NOT NULL AND e10_price < 50`);
+  await pool.query(`UPDATE stations SET super_unleaded_price = super_unleaded_price * 10 WHERE super_unleaded_price IS NOT NULL AND super_unleaded_price < 50`);
+  await pool.query(`UPDATE stations SET premium_diesel_price = premium_diesel_price * 10 WHERE premium_diesel_price IS NOT NULL AND premium_diesel_price < 50`);
+  await pool.query(`UPDATE price_history SET price_pence = price_pence * 10 WHERE price_pence IS NOT NULL AND price_pence < 50`);
+  await pool.query(`UPDATE non_gov_prices SET price_pence = price_pence * 10 WHERE price_pence IS NOT NULL AND price_pence < 50`);
+
   console.log('DB migrations complete.');
 }
 

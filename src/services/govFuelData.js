@@ -66,6 +66,16 @@ async function fetchBrand(brand) {
   }
 }
 
+// Realistic UK pump-price range in pence/litre. Brand feeds publish prices
+// directly in pence (e.g. Asda E10 = 152.9), so we validate rather than scale.
+function sanitisePrice(value) {
+  if (value === null || value === undefined) return null;
+  const num = Number(value);
+  if (!Number.isFinite(num)) return null;
+  if (num < 50 || num > 400) return null;
+  return Math.round(num * 10) / 10;
+}
+
 async function syncFuelData() {
   console.log('Starting Gov UK fuel data sync...');
   const pool = getPool();
@@ -76,13 +86,13 @@ async function syncFuelData() {
     const data = await fetchBrand(brand);
     for (const station of data.stations) {
       try {
-        // UK Gov Open Data price codes:
+        // UK Gov Open Data price codes (all values in pence/litre):
         // E5  = Premium Petrol (RON95 E5)  -> stored as petrol_price
         // B7  = Diesel (B7)                -> stored as diesel_price
         // E10 = Standard Petrol (E10)      -> stored as e10_price
-        const petrolPrice = station.prices?.E5  ? station.prices.E5  / 10 : null;
-        const dieselPrice = station.prices?.B7  ? station.prices.B7  / 10 : null;
-        const e10Price    = station.prices?.E10 ? station.prices.E10 / 10 : null;
+        const petrolPrice = sanitisePrice(station.prices?.E5);
+        const dieselPrice = sanitisePrice(station.prices?.B7);
+        const e10Price    = sanitisePrice(station.prices?.E10);
 
         await pool.query(
           `INSERT INTO stations (id, brand, name, address, postcode, lat, lng,
