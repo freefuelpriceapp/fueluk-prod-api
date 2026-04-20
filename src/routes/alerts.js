@@ -1,9 +1,10 @@
 'use strict';
 /**
  * Sprint 3 — Price Alert Routes
- * POST /api/v1/alerts          — register a price alert
- * GET  /api/v1/alerts/:token   — get alerts by device token
- * DELETE /api/v1/alerts/:id    — delete a specific alert
+ * POST   /api/v1/alerts                — register a price alert
+ * GET    /api/v1/alerts/:token         — get alerts by device token
+ * DELETE /api/v1/alerts/:id            — delete a specific alert
+ * DELETE /api/v1/alerts/token/:token   — delete ALL alerts for a device push token
  */
 const router = require('express').Router();
 const { getPool } = require('../config/db');
@@ -53,7 +54,30 @@ router.get('/:token', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// DELETE /api/v1/alerts/:id
+// DELETE /api/v1/alerts/token/:token — bulk delete all alerts for a device push token.
+// Declared before DELETE /:id so the more-specific path matches first.
+router.delete('/token/:token', async (req, res, next) => {
+  try {
+    const token = req.params.token;
+    if (!token) return res.status(400).json({ error: 'token is required' });
+
+    const result = await getPool().query(
+      `UPDATE price_alerts
+          SET active = false, updated_at = NOW()
+        WHERE device_token = $1 AND active = true
+        RETURNING id`,
+      [token]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({ error: 'No alerts found for that token' });
+    }
+
+    res.json({ success: true, deleted: result.rows.length });
+  } catch (err) { next(err); }
+});
+
+// DELETE /api/v1/alerts/:id — delete a single alert by its numeric ID
 router.delete('/:id', async (req, res, next) => {
   try {
     const result = await getPool().query(
