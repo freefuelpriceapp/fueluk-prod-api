@@ -1,30 +1,31 @@
 'use strict';
 const router = require('express').Router();
 const stationController = require('../controllers/stationController');
+const { cacheFor } = require('../middleware/responseCache');
 
 /**
  * GET /api/v1/stations/nearby
  * Query params: lat, lon, radius (km), fuel_type, brand
  */
-router.get('/nearby', stationController.getNearby);
+router.get('/nearby', cacheFor(30), stationController.getNearby);
 
 /**
  * GET /api/v1/stations/cheapest
  * Query params: lat, lon, radius (km), fuel_type
  */
-router.get('/cheapest', stationController.getCheapest);
+router.get('/cheapest', cacheFor(30), stationController.getCheapest);
 
 /**
  * GET /api/v1/stations/brands
  * Returns distinct brand list for filter UI
  */
-router.get('/brands', stationController.getBrands);
+router.get('/brands', cacheFor(300), stationController.getBrands);
 
 /**
  * GET /api/v1/stations/search
  * Query params: q (search term)
  */
-router.get('/search', stationController.search);
+router.get('/search', cacheFor(60), stationController.search);
 
 /**
  * GET /api/v1/stations/:id

@@ -16,9 +16,10 @@ const premiumRouter = require('./routes/premiumRoutes');
 const pagesRouter = require('./routes/pages');
 const tripRouter = require('./routes/trip');
 const vehiclesRouter = require('./routes/vehicles');
+const diagnosticsRouter = require('./routes/diagnostics');
 const errorHandler = require('./middleware/errorHandler');
 const notFound = require('./middleware/notFound');
-const { generalLimiter } = require('./middleware/rateLimiter');
+const { generalLimiter, createRateLimiter } = require('./middleware/rateLimiter');
 const { scheduleFuelSync } = require('./services/govFuelData');
 const { scheduleFuelFinder } = require('./services/fuelFinder');
 const { startIngestRunner } = require('./jobs/ingestRunner');
@@ -88,6 +89,9 @@ async function start() {
   app.use('/api/v1/premium', premiumRouter);
   app.use('/api/v1/trip', tripRouter);
   app.use('/api/v1/vehicles', vehiclesRouter);
+  // Diagnostics uses its own limiter (10 req / 15 min) so oncall polling
+  // doesn't eat into the general API budget.
+  app.use('/api/v1/diagnostics', createRateLimiter(10), diagnosticsRouter);
 
   // Public pages (privacy, support)
   app.use(pagesRouter);
