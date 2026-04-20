@@ -20,6 +20,7 @@ const diagnosticsRouter = require('./routes/diagnostics');
 const errorHandler = require('./middleware/errorHandler');
 const notFound = require('./middleware/notFound');
 const { generalLimiter, createRateLimiter } = require('./middleware/rateLimiter');
+const apiVersionMiddleware = require('./middleware/apiVersion');
 const { scheduleFuelSync } = require('./services/govFuelData');
 const { scheduleFuelFinder } = require('./services/fuelFinder');
 const { startIngestRunner } = require('./jobs/ingestRunner');
@@ -77,8 +78,9 @@ async function start() {
   // Health check - exactly /health (no prefix)
   app.use('/health', healthRouter);
 
-  // Apply rate limiter to all API v1 routes
-  app.use('/api/v1', generalLimiter);
+  // Apply versioning headers + rate limiter to all API v1 routes.
+  // apiVersionMiddleware runs first so request IDs are set on rate-limit responses too.
+  app.use('/api/v1', apiVersionMiddleware, generalLimiter);
 
   // API v1 routes
   app.use('/api/v1/stations', stationsRouter);
