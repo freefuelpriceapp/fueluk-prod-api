@@ -23,6 +23,13 @@ test('normalizeBrandKey maps alias groups onto the canonical key', () => {
   );
 });
 
+test('normalizeBrandKey collapses MFG variants onto Esso', () => {
+  const essoKey = normalizeBrandKey('Esso');
+  assert.equal(normalizeBrandKey('Motor Fuel Group'), essoKey);
+  assert.equal(normalizeBrandKey('MFG'), essoKey);
+  assert.equal(normalizeBrandKey('MOTOR FUEL GROUP'), essoKey);
+});
+
 test('normalizeBrandKey returns empty string for null/empty input', () => {
   assert.equal(normalizeBrandKey(null), '');
   assert.equal(normalizeBrandKey(''), '');
@@ -35,9 +42,44 @@ test('canonicalBrandName returns alias canonical for known variants', () => {
   assert.equal(canonicalBrandName('Highland fuels Ltd'), 'Highland Fuels');
 });
 
-test('canonicalBrandName preserves trimmed brand for unknown brands', () => {
+test('canonicalBrandName title-cases well-known brand casings', () => {
+  assert.equal(canonicalBrandName('ESSO'), 'Esso');
+  assert.equal(canonicalBrandName('Esso'), 'Esso');
+  assert.equal(canonicalBrandName('esso'), 'Esso');
+  assert.equal(canonicalBrandName('SHELL'), 'Shell');
+  assert.equal(canonicalBrandName('shell'), 'Shell');
+  assert.equal(canonicalBrandName('TEXACO'), 'Texaco');
+  assert.equal(canonicalBrandName('TESCO'), 'Tesco');
+  assert.equal(canonicalBrandName('ASDA'), 'Asda');
+  assert.equal(canonicalBrandName('MORRISONS'), 'Morrisons');
+});
+
+test('canonicalBrandName maps MFG / Motor Fuel Group to Esso display brand', () => {
+  assert.equal(canonicalBrandName('Motor Fuel Group'), 'Esso');
+  assert.equal(canonicalBrandName('MOTOR FUEL GROUP'), 'Esso');
+  assert.equal(canonicalBrandName('MFG'), 'Esso');
+  assert.equal(canonicalBrandName('MFG Expressway'), 'Esso');
+});
+
+test('canonicalBrandName maps Sainsbury variants to apostrophe form', () => {
+  assert.equal(canonicalBrandName("SAINSBURY'S"), "Sainsbury's");
+  assert.equal(canonicalBrandName('Sainsburys'), "Sainsbury's");
+  assert.equal(canonicalBrandName('SAINSBURYS'), "Sainsbury's");
+});
+
+test('canonicalBrandName preserves BP as uppercase acronym', () => {
   assert.equal(canonicalBrandName(' BP '), 'BP');
-  assert.equal(canonicalBrandName("SAINSBURY'S"), "SAINSBURY'S");
+  assert.equal(canonicalBrandName('bp'), 'BP');
+});
+
+test('canonicalBrandName title-cases unknown brands instead of SHOUTING', () => {
+  assert.equal(canonicalBrandName('LITTLE CHEF FUEL'), 'Little Chef Fuel');
+  assert.equal(canonicalBrandName('some unknown brand'), 'Some Unknown Brand');
+});
+
+test('canonicalBrandName handles null/empty', () => {
+  assert.equal(canonicalBrandName(null), null);
+  assert.equal(canonicalBrandName(''), '');
 });
 
 test('normalizedKeysForBrandFilter expands alias groups', () => {
@@ -46,7 +88,22 @@ test('normalizedKeysForBrandFilter expands alias groups', () => {
   assert.ok(keys.includes('NICHOLLS'));
 });
 
-test('normalizedKeysForBrandFilter returns single key for unknown brands', () => {
+test('normalizedKeysForBrandFilter matches Esso + MFG variants together', () => {
+  const keys = normalizedKeysForBrandFilter('Esso');
+  assert.ok(keys.includes('ESSO'));
+  assert.ok(keys.includes('MOTORFUELGROUP'));
+  assert.ok(keys.includes('MFG'));
+  // Filtering by "Motor Fuel Group" also covers the same group.
+  const viaOperator = normalizedKeysForBrandFilter('Motor Fuel Group');
+  assert.ok(viaOperator.includes('ESSO'));
+});
+
+test('normalizedKeysForBrandFilter returns expanded keys for Sainsbury', () => {
   const keys = normalizedKeysForBrandFilter("Sainsbury's");
-  assert.deepEqual(keys, ['SAINSBURYS']);
+  assert.ok(keys.includes('SAINSBURYS'));
+});
+
+test('normalizedKeysForBrandFilter tolerates null/empty', () => {
+  assert.deepEqual(normalizedKeysForBrandFilter(''), []);
+  assert.deepEqual(normalizedKeysForBrandFilter(null), []);
 });

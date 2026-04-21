@@ -128,14 +128,22 @@ async function nearbyFromPoint({ lat, lng }, fuelType, limit) {
 }
 
 function formatStation(row) {
+  const latRaw = row.lat != null ? row.lat : row.latitude;
+  const lonRaw = row.lng != null ? row.lng : (row.lon != null ? row.lon : row.longitude);
+  const latNum = latRaw != null ? parseFloat(latRaw) : null;
+  const lonNum = lonRaw != null ? parseFloat(lonRaw) : null;
+  const lat = Number.isFinite(latNum) ? latNum : null;
+  const lon = Number.isFinite(lonNum) ? lonNum : null;
   return {
     id: row.id,
     name: row.name,
     brand: row.brand ? canonicalBrandName(row.brand) : row.brand,
     address: row.address,
     postcode: row.postcode,
-    lat: parseFloat(row.lat),
-    lon: parseFloat(row.lng || row.lon),
+    lat,
+    lon,
+    latitude: lat,
+    longitude: lon,
     petrol_price: row.petrol_price ? parseFloat(row.petrol_price) : null,
     diesel_price: row.diesel_price ? parseFloat(row.diesel_price) : null,
     e10_price: row.e10_price ? parseFloat(row.e10_price) : null,
