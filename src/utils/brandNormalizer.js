@@ -2,28 +2,55 @@
 
 /**
  * brandNormalizer.js
- * Normalises brand names for deduplication so that variants like
- * "Sainsburys" and "SAINSBURY'S" collapse into a single group.
+ * Normalises brand names for deduplication and display.
  *
- * Strategy:
- *   1. Uppercase + trim whitespace.
- *   2. Strip all non-alphanumeric characters (apostrophes, hyphens, dots, etc.).
- *   3. Apply an explicit alias map for known duplicates that punctuation
- *      stripping alone can't catch (e.g. "Nicholl" -> "Nicholls").
- *
- * The normalized key is used only for grouping. The display name returned to
- * clients is picked from the most common variant within each group (falling
- * back to the alias map's canonical name when one is defined).
+ * Two concerns:
+ *   1. `normalizeBrandKey` — strips casing/punctuation + applies alias groups,
+ *      so "Sainsburys" and "SAINSBURY'S" collapse into one key for grouping.
+ *   2. `canonicalBrandName` — returns the DISPLAY brand shown to clients:
+ *      title-cased, with operator names (e.g. "Motor Fuel Group") mapped to
+ *      the forecourt brand that actually appears on signage ("Esso").
  */
 
+// Maps normalized keys (uppercase, punctuation stripped) to canonical display
+// names. Used by both the key function (for grouping) and canonicalBrandName
+// (for the string returned to clients).
 const BRAND_ALIASES = {
   NICHOLL: 'Nicholls',
   NICHOLLS: 'Nicholls',
   HIGHLANDFUELS: 'Highland Fuels',
   HIGHLANDFUELSLTD: 'Highland Fuels',
+  // Operator -> forecourt brand. MFG operates Esso-branded sites under licence;
+  // our upstream CMA feed sometimes reports the operator instead of the brand,
+  // so the same physical forecourt appears as "Motor Fuel Group" in /nearby
+  // and "ESSO" in /search. Map the operator name onto the display brand.
+  MOTORFUELGROUP: 'Esso',
+  MFG: 'Esso',
+  MFGEXPRESSWAY: 'Esso',
+  // Display casing for well-known brands (the CMA feed mixes "ESSO", "Esso",
+  // "SHELL", "Shell", etc. — we pick one).
+  ESSO: 'Esso',
+  SHELL: 'Shell',
+  BP: 'BP',
+  TEXACO: 'Texaco',
+  TESCO: 'Tesco',
+  ASDA: 'Asda',
+  ASDAEXPRESS: 'Asda Express',
+  MORRISONS: 'Morrisons',
+  SAINSBURYS: "Sainsbury's",
+  COSTCO: 'Costco',
+  COSTCOWHOLESALE: 'Costco',
+  APPLEGREEN: 'Applegreen',
+  JET: 'Jet',
+  GULF: 'Gulf',
+  MURCO: 'Murco',
+  HARVESTENERGY: 'Harvest Energy',
+  TOTAL: 'Total',
+  TOTALENERGIES: 'Total',
 };
 
 function stripPunctuation(s) {
+  if (s == null) return '';
   return String(s).toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
 
@@ -33,19 +60,33 @@ function normalizeBrandKey(brand) {
   return BRAND_ALIASES[stripped] ? stripPunctuation(BRAND_ALIASES[stripped]) : stripped;
 }
 
+function titleCase(s) {
+  return String(s)
+    .trim()
+    .toLowerCase()
+    .replace(/\b([a-z])/g, (_, ch) => ch.toUpperCase());
+}
+
 function canonicalBrandName(brand) {
   if (brand == null) return brand;
-  const stripped = stripPunctuation(brand);
+  const trimmed = String(brand).trim();
+  if (!trimmed) return trimmed;
+  const stripped = stripPunctuation(trimmed);
   if (BRAND_ALIASES[stripped]) return BRAND_ALIASES[stripped];
-  return String(brand).trim();
+  // No alias match — apply display casing so we never return SHOUTING brands.
+  // 2-char acronyms (e.g. "BP") stay uppercase; everything else is title case.
+  if (trimmed.length <= 3 && trimmed === trimmed.toUpperCase()) return trimmed;
+  return titleCase(trimmed);
 }
 
 /**
  * For a user-supplied brand filter value, return every punctuation-stripped
  * uppercase key that should match. This expands alias groups so that filtering
- * by "Nicholls" also matches stations stored as "Nicholl".
+ * by "Nicholls" also matches stations stored as "Nicholl", and filtering by
+ * "Esso" also matches stations stored as "Motor Fuel Group".
  */
 function normalizedKeysForBrandFilter(brand) {
+  if (brand == null) return [];
   const stripped = stripPunctuation(brand);
   if (!stripped) return [];
   const groupKey = BRAND_ALIASES[stripped] ? stripPunctuation(BRAND_ALIASES[stripped]) : stripped;
@@ -56,4 +97,9 @@ function normalizedKeysForBrandFilter(brand) {
   return [...keys];
 }
 
-module.exports = { normalizeBrandKey, canonicalBrandName, normalizedKeysForBrandFilter, BRAND_ALIASES };
+module.exports = {
+  normalizeBrandKey,
+  canonicalBrandName,
+  normalizedKeysForBrandFilter,
+  BRAND_ALIASES,
+};

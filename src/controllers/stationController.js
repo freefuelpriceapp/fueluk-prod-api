@@ -35,7 +35,10 @@ function cleanList(stations, { staleThresholdHours } = {}) {
  */
 async function getNearby(req, res, next) {
   try {
-    const { lat, lon, radius = 5, fuel_type, brand } = req.query;
+    const { lat, lon, fuel_type, brand } = req.query;
+    const radius = req.query.radius_miles != null && req.query.radius_miles !== ''
+      ? req.query.radius_miles
+      : (req.query.radius != null && req.query.radius !== '' ? req.query.radius : 5);
 
     if (!lat || !lon) {
       return res.status(400).json({
@@ -174,7 +177,10 @@ async function getById(req, res, next) {
  */
 async function getCheapest(req, res, next) {
   try {
-    const { lat, lon, radius = 10, fuel_type = 'petrol', limit = 10 } = req.query;
+    const { lat, lon, fuel_type = 'petrol', limit = 10 } = req.query;
+    const radius = req.query.radius_miles != null && req.query.radius_miles !== ''
+      ? req.query.radius_miles
+      : (req.query.radius != null && req.query.radius !== '' ? req.query.radius : 10);
 
     if (!lat || !lon) {
       return res.status(400).json({
