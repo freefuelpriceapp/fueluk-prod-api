@@ -149,6 +149,34 @@ test('[regression] /nearby best_option picks the closer+cheaper station and expl
   assert.match(best.selected_reason, /cheapest/i);
 });
 
+test('[regression] /nearby exposes top-level selected_reason mirroring best_option.selected_reason', async () => {
+  repoRows = [applegreen(), applegreenHolyhead()];
+  const req = { query: { lat: '52.4665', lon: '-1.8742', radius_miles: '5' } };
+  const res = mockRes();
+  await stationController.getNearby(req, res, (e) => { throw e; });
+  assert.ok(res.body.selected_reason, 'top-level selected_reason must be non-null when best_option is set');
+  assert.match(res.body.selected_reason, /cheapest/i);
+  assert.equal(res.body.selected_reason, res.body.best_option.selected_reason,
+    'top-level selected_reason must match best_option.selected_reason');
+});
+
+test('[regression] /nearby top-level selected_reason defaults to petrol when fuel_type omitted', async () => {
+  repoRows = [applegreen(), applegreenHolyhead()];
+  const req = { query: { lat: '52.4665', lon: '-1.8742', radius_miles: '5' } };
+  const res = mockRes();
+  await stationController.getNearby(req, res, (e) => { throw e; });
+  assert.match(res.body.selected_reason, /petrol/i);
+});
+
+test('[regression] /cheapest also exposes top-level selected_reason', async () => {
+  repoRows = [applegreen(), applegreenHolyhead()];
+  const req = { query: { lat: '52.4665', lon: '-1.8742', radius_miles: '5', fuel_type: 'petrol' } };
+  const res = mockRes();
+  await stationController.getCheapest(req, res, (e) => { throw e; });
+  assert.ok(res.body.selected_reason);
+  assert.match(res.body.selected_reason, /cheapest/i);
+});
+
 test('[regression] /nearby best_option falls back when only one station has a price', async () => {
   repoRows = [applegreen({ petrol_price: null, petrol_source: null }), applegreenHolyhead()];
   const req = { query: { lat: '52.4665', lon: '-1.8742', radius_miles: '5', fuel_type: 'petrol' } };
