@@ -25,12 +25,12 @@ function cleanList(stations, { staleThresholdHours } = {}) {
 
 function annotateBestOption(stations, { fuelType, radiusMiles } = {}) {
   const best = selectBestOptionIndex(stations, fuelType || 'petrol', { radiusMiles });
-  if (!best) return { stations, bestOption: null };
+  if (!best) return { stations, bestOption: null, selectedReason: null };
   const next = stations.map((s, i) => {
     if (i !== best.index || !s || typeof s !== 'object') return s;
     return { ...s, is_best_option: true, selected_reason: best.reason };
   });
-  return { stations: next, bestOption: next[best.index] };
+  return { stations: next, bestOption: next[best.index], selectedReason: best.reason };
 }
 
 /**
@@ -84,7 +84,7 @@ async function getNearby(req, res, next) {
     const cleaned = cleanList(rawStations, {
       staleThresholdHours: parseStaleThresholdHours(req.query.stale_threshold_hours),
     });
-    const { stations, bestOption } = annotateBestOption(cleaned, {
+    const { stations, bestOption, selectedReason } = annotateBestOption(cleaned, {
       fuelType: fuel_type || 'petrol',
       radiusMiles: radiusNum,
     });
@@ -94,6 +94,7 @@ async function getNearby(req, res, next) {
       count: stations.length,
       stations,
       best_option: bestOption || null,
+      selected_reason: selectedReason || null,
     });
   } catch (err) {
     next(err);
@@ -216,7 +217,7 @@ async function getCheapest(req, res, next) {
     const cleaned = cleanList(rawStations, {
       staleThresholdHours: parseStaleThresholdHours(req.query.stale_threshold_hours),
     });
-    const { stations, bestOption } = annotateBestOption(cleaned, {
+    const { stations, bestOption, selectedReason } = annotateBestOption(cleaned, {
       fuelType: fuel_type || 'petrol',
       radiusMiles: parseFloat(radius),
     });
@@ -226,6 +227,7 @@ async function getCheapest(req, res, next) {
       count: stations.length,
       stations,
       best_option: bestOption || null,
+      selected_reason: selectedReason || null,
     });
   } catch (err) {
     next(err);
