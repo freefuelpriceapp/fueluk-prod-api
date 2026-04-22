@@ -27,6 +27,15 @@ const BRAND_ALIASES = {
   MOTORFUELGROUP: 'Esso',
   MFG: 'Esso',
   MFGEXPRESSWAY: 'Esso',
+  // EG Group (formerly Euro Garages) operates Applegreen-branded forecourts
+  // in the UK. Upstream feeds sometimes report the holding-company name
+  // ("EG On The Move", "EG Group") instead of the consumer-facing brand
+  // ("Applegreen"), so the same physical forecourt appears under different
+  // names in /nearby vs /cheapest. Map the operator names to the signage brand.
+  EG: 'Applegreen',
+  EGGROUP: 'Applegreen',
+  EGONTHEMOVE: 'Applegreen',
+  EUROGARAGES: 'Applegreen',
   // Display casing for well-known brands (the CMA feed mixes "ESSO", "Esso",
   // "SHELL", "Shell", etc. — we pick one).
   ESSO: 'Esso',
