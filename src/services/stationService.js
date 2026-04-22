@@ -19,6 +19,7 @@ async function getNearbyStations({ lat, lon, radius = 5, fuelType, brand, limit 
   const radiusKm = parseFloat(radius) * MILES_TO_KM;
   const stations = await stationRepository.getNearbyStations({
     lat, lng: lon, radiusKm, fuel: fuelType || 'petrol', brand: brand || null, limit,
+    orderBy: 'distance',
   });
   return stations.map(formatStation);
 }
@@ -76,6 +77,7 @@ async function getCheapestNearby({ lat, lon, radius = 10, fuelType = 'petrol', l
   const radiusKm = parseFloat(radius) * MILES_TO_KM;
   const stations = await stationRepository.getNearbyStations({
     lat, lng: lon, radiusKm, fuel: fuelType, limit,
+    orderBy: 'price',
   });
   return stations.map(formatStation);
 }

@@ -362,6 +362,51 @@ function annotateStations(stations, {
   });
 }
 
+const FUEL_PRICE_FIELDS = {
+  petrol: 'petrol_price',
+  diesel: 'diesel_price',
+  e10: 'e10_price',
+  super_unleaded: 'super_unleaded_price',
+  premium_diesel: 'premium_diesel_price',
+};
+
+/**
+ * Pick the index of the "best option" for the selected fuel from a list of
+ * stations, using the rule: cheapest fresh price wins, tie-broken by distance.
+ * Returns { index, reason } or null when no candidate has a usable price.
+ * Fresh = has a non-null price AND is not flagged stale.
+ */
+function selectBestOptionIndex(stations, fuelType = 'petrol', { radiusMiles } = {}) {
+  if (!Array.isArray(stations) || !stations.length) return null;
+  const priceField = FUEL_PRICE_FIELDS[fuelType] || FUEL_PRICE_FIELDS.petrol;
+
+  let bestIdx = -1;
+  let bestPrice = Infinity;
+  let bestDistance = Infinity;
+  for (let i = 0; i < stations.length; i += 1) {
+    const s = stations[i];
+    if (!s || typeof s !== 'object') continue;
+    const price = s[priceField];
+    if (price == null) continue;
+    const numeric = Number(price);
+    if (!Number.isFinite(numeric)) continue;
+    if (s.stale) continue;
+    const dist = typeof s.distance_miles === 'number' ? s.distance_miles : Infinity;
+    if (numeric < bestPrice || (numeric === bestPrice && dist < bestDistance)) {
+      bestIdx = i;
+      bestPrice = numeric;
+      bestDistance = dist;
+    }
+  }
+
+  if (bestIdx === -1) return null;
+  const radiusLabel = Number.isFinite(Number(radiusMiles)) ? ` within ${Number(radiusMiles)} mi` : '';
+  const fuelLabel = fuelType === 'super_unleaded' ? 'super unleaded'
+    : fuelType === 'premium_diesel' ? 'premium diesel'
+    : fuelType;
+  return { index: bestIdx, reason: `Cheapest ${fuelLabel}${radiusLabel}` };
+}
+
 module.exports = {
   deduplicateStations,
   sanitizeStationPrices,
@@ -369,9 +414,11 @@ module.exports = {
   annotateStations,
   mergeStations,
   isSupermarketBrand,
+  selectBestOptionIndex,
   MIN_PLAUSIBLE_PRICE,
   MAX_PLAUSIBLE_PRICE,
   COORD_TOLERANCE,
   SUPERMARKET_BRAND_KEYS,
   DEFAULT_STALE_THRESHOLD_HOURS,
+  FUEL_PRICE_FIELDS,
 };
