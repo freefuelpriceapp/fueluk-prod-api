@@ -30,6 +30,18 @@ test('normalizeBrandKey collapses MFG variants onto Esso', () => {
   assert.equal(normalizeBrandKey('MOTOR FUEL GROUP'), essoKey);
 });
 
+test('normalizeBrandKey collapses EG Group variants onto Applegreen', () => {
+  const applegreenKey = normalizeBrandKey('Applegreen');
+  assert.equal(normalizeBrandKey('EG On The Move'), applegreenKey);
+  assert.equal(normalizeBrandKey('Eg On The Move'), applegreenKey);
+  assert.equal(normalizeBrandKey('EG ON THE MOVE'), applegreenKey);
+  assert.equal(normalizeBrandKey('EG Group'), applegreenKey);
+  assert.equal(normalizeBrandKey('EG GROUP'), applegreenKey);
+  assert.equal(normalizeBrandKey('EG'), applegreenKey);
+  assert.equal(normalizeBrandKey('Euro Garages'), applegreenKey);
+  assert.equal(normalizeBrandKey('EURO GARAGES'), applegreenKey);
+});
+
 test('normalizeBrandKey returns empty string for null/empty input', () => {
   assert.equal(normalizeBrandKey(null), '');
   assert.equal(normalizeBrandKey(''), '');
@@ -59,6 +71,26 @@ test('canonicalBrandName maps MFG / Motor Fuel Group to Esso display brand', () 
   assert.equal(canonicalBrandName('MOTOR FUEL GROUP'), 'Esso');
   assert.equal(canonicalBrandName('MFG'), 'Esso');
   assert.equal(canonicalBrandName('MFG Expressway'), 'Esso');
+});
+
+test('canonicalBrandName maps EG Group / Euro Garages variants to Applegreen', () => {
+  assert.equal(canonicalBrandName('EG On The Move'), 'Applegreen');
+  assert.equal(canonicalBrandName('Eg On The Move'), 'Applegreen');
+  assert.equal(canonicalBrandName('EG ON THE MOVE'), 'Applegreen');
+  assert.equal(canonicalBrandName('EG Group'), 'Applegreen');
+  assert.equal(canonicalBrandName('EG GROUP'), 'Applegreen');
+  assert.equal(canonicalBrandName('EG'), 'Applegreen');
+  assert.equal(canonicalBrandName('Euro Garages'), 'Applegreen');
+  assert.equal(canonicalBrandName('EURO GARAGES'), 'Applegreen');
+});
+
+test('canonicalBrandName preserves smaller independents as-is', () => {
+  // Certas, Rontec, Park Garage Group have no consumer-brand override
+  assert.equal(canonicalBrandName('Certas Energy'), 'Certas Energy');
+  assert.equal(canonicalBrandName('CERTAS ENERGY'), 'Certas Energy');
+  assert.equal(canonicalBrandName('Rontec'), 'Rontec');
+  assert.equal(canonicalBrandName('RONTEC'), 'Rontec');
+  assert.equal(canonicalBrandName('Park Garage Group'), 'Park Garage Group');
 });
 
 test('canonicalBrandName maps Sainsbury variants to apostrophe form', () => {
@@ -96,6 +128,18 @@ test('normalizedKeysForBrandFilter matches Esso + MFG variants together', () => 
   // Filtering by "Motor Fuel Group" also covers the same group.
   const viaOperator = normalizedKeysForBrandFilter('Motor Fuel Group');
   assert.ok(viaOperator.includes('ESSO'));
+});
+
+test('normalizedKeysForBrandFilter matches Applegreen + EG variants together', () => {
+  const keys = normalizedKeysForBrandFilter('Applegreen');
+  assert.ok(keys.includes('APPLEGREEN'));
+  assert.ok(keys.includes('EG'));
+  assert.ok(keys.includes('EGGROUP'));
+  assert.ok(keys.includes('EGONTHEMOVE'));
+  assert.ok(keys.includes('EUROGARAGES'));
+  // Filtering by the operator name covers the same group.
+  const viaOperator = normalizedKeysForBrandFilter('EG On The Move');
+  assert.ok(viaOperator.includes('APPLEGREEN'));
 });
 
 test('normalizedKeysForBrandFilter returns expanded keys for Sainsbury', () => {
