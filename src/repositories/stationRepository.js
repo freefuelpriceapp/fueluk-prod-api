@@ -17,7 +17,7 @@ function isPostcodeLike(s) {
   return /^[A-Z]{1,2}\d[A-Z\d]?\s*\d?[A-Z]{0,2}$/i.test(String(s).trim());
 }
 
-async function getNearbyStations({ lat, lng, radiusKm = 5, fuel = 'petrol', limit = 50, brand = null }) {
+async function getNearbyStations({ lat, lng, radiusKm = 5, fuel = 'petrol', limit = 50, brand = null, orderBy = 'distance' }) {
   const pool = getPool();
   const radiusM = radiusKm * 1000;
   const fuelCol = fuel === 'diesel' ? 'diesel_price' : fuel === 'e10' ? 'e10_price' : 'petrol_price';
@@ -33,6 +33,10 @@ async function getNearbyStations({ lat, lng, radiusKm = 5, fuel = 'petrol', limi
       brandFilter = `AND REGEXP_REPLACE(UPPER(brand), '[^A-Z0-9]', '', 'g') IN (${placeholders})`;
     }
   }
+  // 'distance' (default) → closest first; 'price' → cheapest-for-fuel first, then closer tiebreak.
+  const orderClause = orderBy === 'price'
+    ? `${fuelCol} ASC NULLS LAST, distance_m ASC`
+    : `distance_m ASC, ${fuelCol} ASC NULLS LAST`;
   const result = await pool.query(
     `SELECT id, brand, name, address, postcode, lat, lng,
             petrol_price, diesel_price, e10_price, petrol_source, diesel_source, e10_source, last_updated,
@@ -46,7 +50,7 @@ async function getNearbyStations({ lat, lng, radiusKm = 5, fuel = 'petrol', limi
         AND name NOT LIKE 'Test %'
         AND (permanent_closure IS NOT TRUE)
         ${brandFilter}
-            ORDER BY ${fuelCol} ASC NULLS LAST, distance_m ASC
+            ORDER BY ${orderClause}
       LIMIT $4`,
     params
   );

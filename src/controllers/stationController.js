@@ -6,6 +6,7 @@ const {
   sanitizeStationPrices,
   validateCrossFuelPrices,
   annotateStations,
+  selectBestOptionIndex,
   DEFAULT_STALE_THRESHOLD_HOURS,
 } = require('../utils/stationQuarantine');
 
@@ -20,6 +21,16 @@ function cleanList(stations, { staleThresholdHours } = {}) {
   const validated = validateCrossFuelPrices(sanitized);
   const deduped = deduplicateStations(validated);
   return annotateStations(deduped, { staleThresholdHours });
+}
+
+function annotateBestOption(stations, { fuelType, radiusMiles } = {}) {
+  const best = selectBestOptionIndex(stations, fuelType || 'petrol', { radiusMiles });
+  if (!best) return { stations, bestOption: null };
+  const next = stations.map((s, i) => {
+    if (i !== best.index || !s || typeof s !== 'object') return s;
+    return { ...s, is_best_option: true, selected_reason: best.reason };
+  });
+  return { stations: next, bestOption: next[best.index] };
 }
 
 /**
@@ -70,14 +81,19 @@ async function getNearby(req, res, next) {
       brand: brand || null,
       limit: limitNum,
     });
-    const stations = cleanList(rawStations, {
+    const cleaned = cleanList(rawStations, {
       staleThresholdHours: parseStaleThresholdHours(req.query.stale_threshold_hours),
+    });
+    const { stations, bestOption } = annotateBestOption(cleaned, {
+      fuelType: fuel_type || 'petrol',
+      radiusMiles: radiusNum,
     });
 
     return res.json({
       success: true,
       count: stations.length,
       stations,
+      best_option: bestOption || null,
     });
   } catch (err) {
     next(err);
@@ -197,14 +213,19 @@ async function getCheapest(req, res, next) {
       fuelType: fuel_type,
       limit: Math.min(parseInt(limit, 10) || 10, 20),
     });
-    const stations = cleanList(rawStations, {
+    const cleaned = cleanList(rawStations, {
       staleThresholdHours: parseStaleThresholdHours(req.query.stale_threshold_hours),
+    });
+    const { stations, bestOption } = annotateBestOption(cleaned, {
+      fuelType: fuel_type || 'petrol',
+      radiusMiles: parseFloat(radius),
     });
 
     return res.json({
       success: true,
       count: stations.length,
       stations,
+      best_option: bestOption || null,
     });
   } catch (err) {
     next(err);
