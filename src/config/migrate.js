@@ -298,6 +298,53 @@ async function runMigrations() {
   await pool.query(`UPDATE price_history SET price_pence = price_pence * 10 WHERE price_pence IS NOT NULL AND price_pence < 50`);
   await pool.query(`UPDATE non_gov_prices SET price_pence = price_pence * 10 WHERE price_pence IS NOT NULL AND price_pence < 50`);
 
+  // Differentiators v1 — community price flags (F6).
+  // device_id is stored as a SHA-256 hex digest; never keep the raw value.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS price_flags (
+      id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      station_id    VARCHAR(50) NOT NULL,
+      fuel_type     VARCHAR(20) NOT NULL,
+      device_hash   VARCHAR(64) NOT NULL,
+      reason        VARCHAR(20) NOT NULL DEFAULT 'wrong',
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  // gen_random_uuid() requires pgcrypto in older PG builds; try to enable
+  // it but tolerate permission failures on the DB user.
+  try {
+    await pool.query('CREATE EXTENSION IF NOT EXISTS pgcrypto;');
+  } catch (_err) {
+    // non-fatal: gen_random_uuid is a builtin on PG 13+
+  }
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_price_flags_lookup
+       ON price_flags(station_id, fuel_type, created_at DESC)`,
+  );
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_price_flags_dedup
+       ON price_flags(station_id, fuel_type, device_hash, created_at DESC)`,
+  );
+
+  // When 3+ distinct devices flag the same (station, fuel) in an hour the
+  // price enters community quarantine. Auto-expires after 2 hours or when
+  // a fresher feed update arrives (tracked by stations.last_updated on the
+  // ingest side — station controllers compare it to quarantined_at).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS price_flag_quarantine (
+      station_id      VARCHAR(50) NOT NULL,
+      fuel_type       VARCHAR(20) NOT NULL,
+      quarantined_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at      TIMESTAMPTZ NOT NULL,
+      reason          VARCHAR(40) NOT NULL DEFAULT 'community_flags',
+      PRIMARY KEY (station_id, fuel_type)
+    );
+  `);
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_price_flag_quarantine_expires
+       ON price_flag_quarantine(expires_at)`,
+  );
+
   console.log('DB migrations complete.');
 }
 

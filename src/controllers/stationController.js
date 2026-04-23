@@ -1,6 +1,9 @@
 'use strict';
 
 const stationService = require('../services/stationService');
+const breakEvenService = require('../services/breakEvenService');
+const trajectoryService = require('../services/trajectoryService');
+const communityQuarantineService = require('../services/communityQuarantineService');
 const {
   deduplicateStations,
   sanitizeStationPrices,
@@ -9,6 +12,78 @@ const {
   selectBestOptionIndex,
   DEFAULT_STALE_THRESHOLD_HOURS,
 } = require('../utils/stationQuarantine');
+
+function envFlag(name, defaultOn = true) {
+  const raw = process.env[name];
+  if (raw == null || raw === '') return defaultOn;
+  return raw === 'true' || raw === '1';
+}
+
+function parseOptionalNumber(raw) {
+  if (raw == null || raw === '') return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+function annotateBreakEvenBlock(stations, { mpg, fuelType, tankFillLitres } = {}) {
+  if (!envFlag('ENABLE_BREAK_EVEN', true)) {
+    return { stations, bestValue: null, bestValueReason: null };
+  }
+  const { breakEvens, bestValue } = breakEvenService.annotateBreakEven(stations, {
+    mpg,
+    fuelType,
+    tankFillLitres,
+  });
+  const withBreakEven = stations.map((s, i) => {
+    if (!s || typeof s !== 'object') return s;
+    const be = breakEvens[i];
+    if (!be) return s;
+    return { ...s, break_even: be };
+  });
+  let bestValueStation = null;
+  let bestValueReason = null;
+  if (bestValue && bestValue.index >= 0 && bestValue.index < withBreakEven.length) {
+    const picked = withBreakEven[bestValue.index];
+    if (picked && typeof picked === 'object') {
+      bestValueStation = { ...picked, is_best_value: true };
+      bestValueReason = bestValue.reason;
+      withBreakEven[bestValue.index] = bestValueStation;
+    }
+  }
+  return { stations: withBreakEven, bestValue: bestValueStation, bestValueReason };
+}
+
+async function applyCommunityQuarantineIfEnabled(stations) {
+  if (!envFlag('ENABLE_PRICE_FLAGS', true)) return stations;
+  try {
+    return await communityQuarantineService.applyCommunityQuarantine(stations);
+  } catch (err) {
+    console.warn('[community-quarantine] apply failed:', err && err.message);
+    return stations;
+  }
+}
+
+async function annotateTrajectoryBlock(stations, { fuelType } = {}) {
+  if (!envFlag('ENABLE_TRAJECTORY', true)) {
+    return { stations, nationalTrajectory: null };
+  }
+  try {
+    const { perStation, national } = await trajectoryService.annotateTrajectory(stations, {
+      fuelType,
+    });
+    const withTrajectory = stations.map((s, i) => {
+      if (!s || typeof s !== 'object') return s;
+      const t = perStation[i];
+      if (!t) return s;
+      return { ...s, trajectory: t };
+    });
+    return { stations: withTrajectory, nationalTrajectory: national };
+  } catch (err) {
+    // Never break the endpoint on a trajectory miss — log and return as-is.
+    console.warn('[trajectory] annotate failed:', err && err.message);
+    return { stations, nationalTrajectory: null };
+  }
+}
 
 function parseStaleThresholdHours(raw) {
   if (raw == null || raw === '') return DEFAULT_STALE_THRESHOLD_HOURS;
@@ -84,9 +159,21 @@ async function getNearby(req, res, next) {
     const cleaned = cleanList(rawStations, {
       staleThresholdHours: parseStaleThresholdHours(req.query.stale_threshold_hours),
     });
-    const { stations, bestOption, selectedReason } = annotateBestOption(cleaned, {
+    const quarantined = await applyCommunityQuarantineIfEnabled(cleaned);
+    const { stations: withBest, bestOption, selectedReason } = annotateBestOption(quarantined, {
       fuelType: fuel_type || 'petrol',
       radiusMiles: radiusNum,
+    });
+    const { stations: withBreakEven, bestValue, bestValueReason } = annotateBreakEvenBlock(
+      withBest,
+      {
+        mpg: parseOptionalNumber(req.query.mpg),
+        fuelType: req.query.fuel_type || 'E10',
+        tankFillLitres: parseOptionalNumber(req.query.tank_fill_litres),
+      },
+    );
+    const { stations, nationalTrajectory } = await annotateTrajectoryBlock(withBreakEven, {
+      fuelType: req.query.fuel_type || 'E10',
     });
 
     return res.json({
@@ -95,6 +182,9 @@ async function getNearby(req, res, next) {
       stations,
       best_option: bestOption || null,
       selected_reason: selectedReason || null,
+      best_value: bestValue || null,
+      best_value_reason: bestValueReason || null,
+      national_trajectory: nationalTrajectory || null,
     });
   } catch (err) {
     next(err);
@@ -217,9 +307,21 @@ async function getCheapest(req, res, next) {
     const cleaned = cleanList(rawStations, {
       staleThresholdHours: parseStaleThresholdHours(req.query.stale_threshold_hours),
     });
-    const { stations, bestOption, selectedReason } = annotateBestOption(cleaned, {
+    const quarantined = await applyCommunityQuarantineIfEnabled(cleaned);
+    const { stations: withBest, bestOption, selectedReason } = annotateBestOption(quarantined, {
       fuelType: fuel_type || 'petrol',
       radiusMiles: parseFloat(radius),
+    });
+    const { stations: withBreakEven, bestValue, bestValueReason } = annotateBreakEvenBlock(
+      withBest,
+      {
+        mpg: parseOptionalNumber(req.query.mpg),
+        fuelType: req.query.fuel_type || 'E10',
+        tankFillLitres: parseOptionalNumber(req.query.tank_fill_litres),
+      },
+    );
+    const { stations, nationalTrajectory } = await annotateTrajectoryBlock(withBreakEven, {
+      fuelType: req.query.fuel_type || 'E10',
     });
 
     return res.json({
@@ -228,6 +330,9 @@ async function getCheapest(req, res, next) {
       stations,
       best_option: bestOption || null,
       selected_reason: selectedReason || null,
+      best_value: bestValue || null,
+      best_value_reason: bestValueReason || null,
+      national_trajectory: nationalTrajectory || null,
     });
   } catch (err) {
     next(err);
