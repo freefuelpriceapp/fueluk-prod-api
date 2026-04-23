@@ -1,6 +1,7 @@
 'use strict';
 const router = require('express').Router();
 const stationController = require('../controllers/stationController');
+const priceFlagsController = require('../controllers/priceFlagsController');
 const { cacheFor } = require('../middleware/responseCache');
 
 /**
@@ -26,6 +27,13 @@ router.get('/brands', cacheFor(300), stationController.getBrands);
  * Query params: q (search term)
  */
 router.get('/search', cacheFor(60), stationController.search);
+
+/**
+ * POST /api/v1/stations/:stationId/flag-price
+ * Community-reported wrong price. See src/services/priceFlagsService.js.
+ * Feature-flagged via ENABLE_PRICE_FLAGS (default on).
+ */
+router.post('/:stationId/flag-price', priceFlagsController.flagPrice);
 
 /**
  * GET /api/v1/stations/:id
