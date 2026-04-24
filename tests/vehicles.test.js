@@ -218,26 +218,91 @@ test('GET /lookup caches responses (second call is X-Cache: HIT)', async () => {
   } finally { server.close(); }
 });
 
-test('GET /lookup returns 429 when per-IP rate limit exceeded', async () => {
+test('GET /lookup returns 429 with retry_after_seconds when device daily cap exceeded', async () => {
   delete process.env.DVLA_API_KEY;
   delete process.env.DVSA_MOT_API_KEY;
   clearCache();
+  const { _resetStoreForTests } = require('../src/middleware/rateLimiter');
+  _resetStoreForTests();
   const { server, port } = await startApp();
   try {
-    // Vehicle limiter is 10/min. Fire 12 requests with a forced
-    // X-Forwarded-For so they share an IP bucket even if the socket
-    // differs between test runs.
-    const ip = '203.0.113.42';
-    let sawLimit = false;
-    for (let i = 0; i < 12; i++) {
+    const deviceId = 'device-test-limit-1';
+    let limitResp = null;
+    // Device cap is 30/day. 31st should 429.
+    for (let i = 0; i < 31; i++) {
+      const r = await fetchJson(
+        port,
+        `/api/v1/vehicles/lookup?reg=AB12CDE&_i=${i}`,
+        { 'x-device-id': deviceId },
+      );
+      if (r.status === 429) { limitResp = r; break; }
+    }
+    assert.ok(limitResp, 'expected a 429 on the 31st request');
+    assert.equal(typeof limitResp.json.retry_after_seconds, 'number');
+    assert.ok(limitResp.json.retry_after_seconds > 0);
+    assert.ok(limitResp.json.message && limitResp.json.message.length > 0);
+  } finally { server.close(); }
+});
+
+test('GET /lookup: a different device_id is not blocked when another device is exhausted', async () => {
+  delete process.env.DVLA_API_KEY;
+  delete process.env.DVSA_MOT_API_KEY;
+  clearCache();
+  const { _resetStoreForTests } = require('../src/middleware/rateLimiter');
+  _resetStoreForTests();
+  const { server, port } = await startApp();
+  try {
+    const exhausted = 'device-exhausted-A';
+    for (let i = 0; i < 31; i++) {
+      await fetchJson(
+        port,
+        `/api/v1/vehicles/lookup?reg=AB12CDE&_i=${i}`,
+        { 'x-device-id': exhausted },
+      );
+    }
+    // Confirm exhausted
+    const blocked = await fetchJson(port, '/api/v1/vehicles/lookup?reg=AB12CDE', { 'x-device-id': exhausted });
+    assert.equal(blocked.status, 429);
+
+    // Fresh device should be fine on first call.
+    const fresh = await fetchJson(port, '/api/v1/vehicles/lookup?reg=AB12CDE', { 'x-device-id': 'device-fresh-B' });
+    assert.equal(fresh.status, 200);
+  } finally { server.close(); }
+});
+
+test('GET /lookup: missing device_id falls back to per-IP bucket (generous)', async () => {
+  delete process.env.DVLA_API_KEY;
+  delete process.env.DVSA_MOT_API_KEY;
+  clearCache();
+  const { _resetStoreForTests } = require('../src/middleware/rateLimiter');
+  _resetStoreForTests();
+  const { server, port } = await startApp();
+  try {
+    // IP bucket is 60/hour; 31 requests without a device_id must all pass.
+    const ip = '203.0.113.99';
+    for (let i = 0; i < 31; i++) {
       const r = await fetchJson(
         port,
         `/api/v1/vehicles/lookup?reg=AB12CDE&_i=${i}`,
         { 'x-forwarded-for': ip },
       );
-      if (r.status === 429) { sawLimit = true; break; }
+      assert.equal(r.status, 200, `request ${i} should succeed on IP fallback`);
+      assert.equal(r.headers['x-ratelimit-scope'], 'ip');
     }
-    assert.ok(sawLimit, 'expected at least one 429 within 12 requests');
+  } finally { server.close(); }
+});
+
+test('GET /lookup: device_id via query param works equivalently to header', async () => {
+  delete process.env.DVLA_API_KEY;
+  delete process.env.DVSA_MOT_API_KEY;
+  clearCache();
+  const { _resetStoreForTests } = require('../src/middleware/rateLimiter');
+  _resetStoreForTests();
+  const { server, port } = await startApp();
+  try {
+    const r = await fetchJson(port, '/api/v1/vehicles/lookup?reg=AB12CDE&device_id=qp-device-1');
+    assert.equal(r.status, 200);
+    assert.equal(r.headers['x-ratelimit-scope'], 'device');
   } finally { server.close(); }
 });
 

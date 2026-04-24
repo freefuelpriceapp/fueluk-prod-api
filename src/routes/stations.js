@@ -3,6 +3,7 @@ const router = require('express').Router();
 const stationController = require('../controllers/stationController');
 const priceFlagsController = require('../controllers/priceFlagsController');
 const { cacheFor } = require('../middleware/responseCache');
+const { flagPriceLimiter } = require('../middleware/flagPriceRateLimit');
 
 /**
  * GET /api/v1/stations/nearby
@@ -33,7 +34,7 @@ router.get('/search', cacheFor(60), stationController.search);
  * Community-reported wrong price. See src/services/priceFlagsService.js.
  * Feature-flagged via ENABLE_PRICE_FLAGS (default on).
  */
-router.post('/:stationId/flag-price', priceFlagsController.flagPrice);
+router.post('/:stationId/flag-price', flagPriceLimiter, priceFlagsController.flagPrice);
 
 /**
  * GET /api/v1/stations/:id
