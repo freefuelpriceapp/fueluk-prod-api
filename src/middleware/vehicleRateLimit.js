@@ -2,18 +2,34 @@
 
 /**
  * vehicleRateLimit.js
- * Per-IP rate limiter for vehicle lookup endpoints.
+ * Rate limiter for vehicle lookup endpoints.
  *
- * Vehicle lookups hit external government APIs with their own quotas, so
- * we cap clients at 10 requests/minute to stay well under DVLA's 5 req/sec
- * and avoid burning the DVSA budget on abusive callers.
+ * Shifted from per-IP to per-device (SHA-256 of X-Device-ID / ?device_id)
+ * so that shared networks (home, office, café WiFi) don't share a bucket.
+ * Real app traffic always includes the header; scripts/curl without one
+ * fall through to a generous per-IP ceiling so external quotas (DVLA,
+ * DVSA) stay protected from runaway clients.
  */
 
-const { createRateLimiter } = require('./rateLimiter');
+const { createDeviceRateLimiter } = require('./rateLimiter');
 
-const VEHICLE_WINDOW_MS = 60 * 1000;
-const VEHICLE_MAX = 10;
+const VEHICLE_DEVICE_MAX = 30;
+const VEHICLE_DEVICE_WINDOW_MS = 24 * 60 * 60 * 1000; // 24h rolling
+const VEHICLE_IP_MAX = 60;
+const VEHICLE_IP_WINDOW_MS = 60 * 60 * 1000; // 1h
 
-const vehicleLimiter = createRateLimiter(VEHICLE_MAX, VEHICLE_WINDOW_MS);
+const vehicleLimiter = createDeviceRateLimiter({
+  deviceMax: VEHICLE_DEVICE_MAX,
+  deviceWindowMs: VEHICLE_DEVICE_WINDOW_MS,
+  ipMax: VEHICLE_IP_MAX,
+  ipWindowMs: VEHICLE_IP_WINDOW_MS,
+  label: 'vehicleLookup',
+});
 
-module.exports = { vehicleLimiter, VEHICLE_MAX, VEHICLE_WINDOW_MS };
+module.exports = {
+  vehicleLimiter,
+  VEHICLE_DEVICE_MAX,
+  VEHICLE_DEVICE_WINDOW_MS,
+  VEHICLE_IP_MAX,
+  VEHICLE_IP_WINDOW_MS,
+};
