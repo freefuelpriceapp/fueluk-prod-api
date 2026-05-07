@@ -14,6 +14,7 @@
 
 const dvlaService = require('./dvlaService');
 const dvsaService = require('./dvsaService');
+const vehicleSpecService = require('./vehicleSpecService');
 
 function mapMotHistory(raw) {
   if (!raw) return [];
@@ -37,17 +38,23 @@ function mapMotHistory(raw) {
   }));
 }
 
-function toUnifiedResponse(reg, dvlaResult, motResult) {
+function toUnifiedResponse(reg, dvlaResult, motResult, specResult) {
   const dvla = dvlaResult?.data || null;
   const motHistory = mapMotHistory(motResult?.data);
 
   const dvlaHasData = Boolean(dvla) && !dvlaResult?.notFound;
   const motHasData = motResult?.available && !motResult?.notFound;
+  const spec = specResult && specResult.data ? specResult.data : null;
+
+  // Back-compat: DVLA often returns model: null. If our spec service has
+  // a model, surface it at the root so existing clients reading `.model`
+  // start working without code changes.
+  const rootModel = (dvla?.model) || (spec && spec.model) || null;
 
   return {
     registration: dvla?.registrationNumber || reg,
     make: dvla?.make || null,
-    model: dvla?.model || null,
+    model: rootModel,
     colour: dvla?.colour || null,
     yearOfManufacture: dvla?.yearOfManufacture || null,
     fuelType: dvla?.fuelType || null,
@@ -67,6 +74,7 @@ function toUnifiedResponse(reg, dvlaResult, motResult) {
     dvlaAvailable: dvlaHasData,
     motHistoryAvailable: motHasData,
     motHistory,
+    spec,
     checkedAt: new Date().toISOString(),
     sources: {
       dvla: {
@@ -79,6 +87,10 @@ function toUnifiedResponse(reg, dvlaResult, motResult) {
         notFound: Boolean(motResult?.notFound),
         error: motResult?.error || null,
       },
+      spec: {
+        available: Boolean(spec),
+        error: specResult?.error || null,
+      },
       insurance: {
         available: false,
         error: 'askMID insurance check not yet configured',
@@ -88,14 +100,21 @@ function toUnifiedResponse(reg, dvlaResult, motResult) {
 }
 
 async function lookupVehicle(reg) {
-  const [dvlaResult, motResult] = await Promise.all([
+  const [dvlaResult, motResult, specData] = await Promise.all([
     dvlaService.fetchDvla(reg),
     dvsaService.fetchMotHistory(reg),
+    // Spec service never throws, returns null on any failure / flag-off.
+    vehicleSpecService.fetchVehicleSpec(reg).catch(() => null),
   ]);
+  const specResult = {
+    data: specData,
+    error: specData ? null : (vehicleSpecService.isFlagEnabled() ? 'spec_unavailable' : null),
+  };
   return {
-    response: toUnifiedResponse(reg, dvlaResult, motResult),
+    response: toUnifiedResponse(reg, dvlaResult, motResult, specResult),
     dvlaResult,
     motResult,
+    specResult,
   };
 }
 

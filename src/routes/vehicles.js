@@ -22,7 +22,8 @@ const router = require('express').Router();
 const vehicleCheckService = require('../services/vehicleCheckService');
 const dvlaService = require('../services/dvlaService');
 const dvsaService = require('../services/dvsaService');
-const { vehicleLimiter, motLimiter } = require('../middleware/vehicleRateLimit');
+const vehicleSpecService = require('../services/vehicleSpecService');
+const { vehicleLimiter, motLimiter, specLimiter } = require('../middleware/vehicleRateLimit');
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const MAX_CACHE_ENTRIES = 1000;
@@ -231,6 +232,50 @@ router.get('/mot', motLimiter, async (req, res, next) => {
     }
     motCacheSet(reg, payload);
     return res.json(payload);
+  } catch (err) { next(err); }
+});
+
+/**
+ * GET /api/v1/vehicles/spec?reg=AB12CDE
+ * Returns the enriched vehicle spec (model/variant/trim/body/etc.) for the
+ * registration, sourced from checkcardetails.co.uk, without the DVSA history
+ * overhead. Used by the upcoming DVSA G1 pre-purchase check feature.
+ *
+ * Same rate-limit posture as /lookup. Service-level 30-day cache lives in
+ * vehicleSpecService — repeat calls don't hit upstream.
+ *
+ * Responses:
+ *   200 OK — { found: true, registration, spec: {...} }
+ *   200 OK — { found: false, registration, reason } (flag off / no data)
+ *   400    — invalid registration
+ *   429    — device daily cap exceeded
+ *   503    — feature flag off OR upstream unavailable
+ */
+router.get('/spec', specLimiter, async (req, res, next) => {
+  try {
+    const reg = normaliseReg(req.query.reg);
+    if (!reg) {
+      return res.status(400).json({
+        error: 'reg query param is required (valid UK plate: letters and digits, 2–8 chars after stripping spaces)',
+      });
+    }
+
+    if (!vehicleSpecService.isFlagEnabled()) {
+      return res.status(503).json({
+        error: 'Vehicle spec enrichment not enabled',
+        registration: reg,
+      });
+    }
+
+    const spec = await vehicleSpecService.fetchVehicleSpec(reg);
+    if (!spec) {
+      return res.status(200).json({
+        found: false,
+        registration: reg,
+        reason: 'spec_unavailable',
+      });
+    }
+    return res.json({ found: true, registration: reg, spec });
   } catch (err) { next(err); }
 });
 

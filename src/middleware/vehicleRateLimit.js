@@ -27,6 +27,13 @@ const MOT_DEVICE_WINDOW_MS = 24 * 60 * 60 * 1000; // 24h rolling
 const MOT_IP_MAX = 40;
 const MOT_IP_WINDOW_MS = 60 * 60 * 1000; // 1h
 
+// /spec is the same posture as /lookup — pre-purchase G1 flow may call it
+// once per vehicle the user is interested in.
+const SPEC_DEVICE_MAX = 30;
+const SPEC_DEVICE_WINDOW_MS = 24 * 60 * 60 * 1000;
+const SPEC_IP_MAX = 60;
+const SPEC_IP_WINDOW_MS = 60 * 60 * 1000;
+
 const vehicleLimiter = createDeviceRateLimiter({
   deviceMax: VEHICLE_DEVICE_MAX,
   deviceWindowMs: VEHICLE_DEVICE_WINDOW_MS,
@@ -43,9 +50,18 @@ const motLimiter = createDeviceRateLimiter({
   label: 'vehicleMot',
 });
 
+const specLimiter = createDeviceRateLimiter({
+  deviceMax: SPEC_DEVICE_MAX,
+  deviceWindowMs: SPEC_DEVICE_WINDOW_MS,
+  ipMax: SPEC_IP_MAX,
+  ipWindowMs: SPEC_IP_WINDOW_MS,
+  label: 'vehicleSpec',
+});
+
 module.exports = {
   vehicleLimiter,
   motLimiter,
+  specLimiter,
   VEHICLE_DEVICE_MAX,
   VEHICLE_DEVICE_WINDOW_MS,
   VEHICLE_IP_MAX,
