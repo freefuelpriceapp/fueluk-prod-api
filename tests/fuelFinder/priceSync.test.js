@@ -40,7 +40,7 @@ function makeApiClient(batches) {
   };
 }
 
-test('applyPriceUpdates builds single UPDATE with price + source + NOW', async () => {
+test('applyPriceUpdates builds single UPDATE with price + source + per-field timestamp + NOW', async () => {
   const pool = makePool();
   await applyPriceUpdates(pool, 'node1', [
     { priceColumn: 'e10_price', sourceColumn: 'e10_source', price: 129.9, updatedAt: null },
@@ -50,11 +50,20 @@ test('applyPriceUpdates builds single UPDATE with price + source + NOW', async (
   assert.ok(upd);
   assert.match(upd.sql, /e10_price = \$2/);
   assert.match(upd.sql, /e10_source = \$3/);
-  assert.match(upd.sql, /diesel_price = \$4/);
-  assert.match(upd.sql, /diesel_source = \$5/);
+  assert.match(upd.sql, /e10_updated_at = \$4/);
+  assert.match(upd.sql, /diesel_price = \$5/);
+  assert.match(upd.sql, /diesel_source = \$6/);
+  assert.match(upd.sql, /diesel_updated_at = \$7/);
   assert.match(upd.sql, /last_updated = NOW\(\)/);
   assert.match(upd.sql, /WHERE fuel_finder_node_id = \$1/);
-  assert.deepEqual(upd.params, ['node1', 129.9, 'fuel_finder', 136.9, 'fuel_finder']);
+  // Position 0 = node id; 1,4 = price; 2,5 = source; 3,6 = per-field timestamp.
+  assert.equal(upd.params[0], 'node1');
+  assert.equal(upd.params[1], 129.9);
+  assert.equal(upd.params[2], 'fuel_finder');
+  assert.ok(upd.params[3] instanceof Date);
+  assert.equal(upd.params[4], 136.9);
+  assert.equal(upd.params[5], 'fuel_finder');
+  assert.ok(upd.params[6] instanceof Date);
 });
 
 test('applyPriceUpdates noop on empty updates', async () => {

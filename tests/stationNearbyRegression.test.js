@@ -46,7 +46,12 @@ function mockRes() {
   return res;
 }
 
+function freshIso() {
+  return new Date(Date.now() - 60 * 60 * 1000).toISOString(); // 1h ago
+}
+
 function applegreen(overrides = {}) {
+  const ts = freshIso();
   return {
     id: 'gcqxsmallheath',
     name: 'Applegreen Small Heath Highway',
@@ -65,7 +70,12 @@ function applegreen(overrides = {}) {
     e10_source: 'applegreen_official',
     super_unleaded_source: null,
     premium_diesel_source: null,
-    last_updated: '2026-04-22T02:00:00Z',
+    petrol_updated_at: ts,
+    diesel_updated_at: ts,
+    e10_updated_at: ts,
+    super_unleaded_updated_at: null,
+    premium_diesel_updated_at: null,
+    last_updated: ts,
     opening_hours: null,
     amenities: [],
     is_motorway: false,
@@ -79,6 +89,7 @@ function applegreen(overrides = {}) {
 }
 
 function applegreenHolyhead(overrides = {}) {
+  const ts = freshIso();
   return applegreen({
     id: 'gcqxholyhead',
     name: 'Applegreen Holyhead Road',
@@ -92,7 +103,10 @@ function applegreenHolyhead(overrides = {}) {
     petrol_source: 'gov',
     diesel_source: 'gov',
     e10_source: 'gov',
-    last_updated: '2026-04-22T02:00:00Z',
+    petrol_updated_at: ts,
+    diesel_updated_at: ts,
+    e10_updated_at: ts,
+    last_updated: ts,
     distance_m: 7289, // ~4.53 mi
     ...overrides,
   });

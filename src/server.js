@@ -26,6 +26,7 @@ const { scheduleFuelFinder } = require('./services/fuelFinder');
 const { startIngestRunner } = require('./jobs/ingestRunner');
 const { startAlertJob } = require('./jobs/alertJob');
 const { startRetentionJob } = require('./jobs/retentionJob');
+const { runBackfillQuarantine } = require('./jobs/backfillQuarantine');
 
 const PORT = process.env.PORT || 3000;
 
@@ -113,6 +114,17 @@ async function start() {
     startIngestRunner();
     startAlertJob();
     startRetentionJob();
+
+    // Wave A one-shot backfill: re-evaluate every station's price fields
+    // against the new staleness rules and clear any stuck values that the
+    // upstream Fuel Finder feed says shouldn't exist (e.g. B10 0AE super
+    // unleaded). Idempotent — safe on every boot. Skipped via env flag in
+    // case we ever need to disable it for hot-rollback.
+    if (process.env.SKIP_QUARANTINE_BACKFILL !== 'true') {
+      runBackfillQuarantine().catch((err) => {
+        console.error('[Boot] runBackfillQuarantine failed:', err && err.message);
+      });
+    }
   });
 }
 

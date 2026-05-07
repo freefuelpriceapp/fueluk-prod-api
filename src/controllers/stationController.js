@@ -10,6 +10,7 @@ const {
   validateCrossFuelPrices,
   annotateStations,
   selectBestOptionIndex,
+  quarantineStaleFields,
   DEFAULT_STALE_THRESHOLD_HOURS,
 } = require('../utils/stationQuarantine');
 
@@ -95,7 +96,12 @@ function cleanList(stations, { staleThresholdHours } = {}) {
   const sanitized = sanitizeStationPrices(stations);
   const validated = validateCrossFuelPrices(sanitized);
   const deduped = deduplicateStations(validated);
-  return annotateStations(deduped, { staleThresholdHours });
+  // Per-field staleness gate. Critically, we run this AFTER dedup so the
+  // merged record's per-field timestamps are evaluated, not the individual
+  // gov/fuel_finder rows. The station is NEVER hidden — only fields are
+  // quarantined per data_handling.md.
+  const quarantined = quarantineStaleFields(deduped);
+  return annotateStations(quarantined, { staleThresholdHours });
 }
 
 function annotateBestOption(stations, { fuelType, radiusMiles } = {}) {
@@ -272,7 +278,8 @@ async function getById(req, res, next) {
     const staleThresholdHours = parseStaleThresholdHours(req.query.stale_threshold_hours);
     const sanitized = sanitizeStationPrices([station]);
     const validated = validateCrossFuelPrices(sanitized);
-    const [annotated] = annotateStations(validated, { staleThresholdHours });
+    const fieldQuarantined = quarantineStaleFields(validated);
+    const [annotated] = annotateStations(fieldQuarantined, { staleThresholdHours });
     return res.json({ success: true, station: annotated });
   } catch (err) {
     next(err);

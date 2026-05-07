@@ -11,6 +11,7 @@
 
 const router = require('express').Router();
 const { getPool } = require('../config/db');
+const { runBackfillQuarantine } = require('../jobs/backfillQuarantine');
 
 function deriveStatus({ lastGovSyncAgeHours, stationTotal, staleOver7Days }) {
   const stalePct = stationTotal > 0 ? (staleOver7Days / stationTotal) * 100 : 0;
@@ -177,6 +178,147 @@ router.get('/', async (req, res, next) => {
         fired_last_24h: alerts.fired_last_24h || 0,
       },
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/v1/diagnostics/station/:id
+ * Per-station data-quality snapshot for oncall debugging. Surfaces:
+ *   - the live merged values
+ *   - the per-source / per-field timestamps and currently-winning source
+ *   - any quarantine flags currently set
+ *   - the price_history rows for the last 7 days, grouped by source
+ *
+ * Useful for cases like B10 0AE where a stuck reading needs to be
+ * traced back to the source feed and timestamp without shelling into
+ * the database.
+ */
+router.get('/station/:id', async (req, res, next) => {
+  try {
+    const pool = getPool();
+    const { id } = req.params;
+    if (!id) {
+      return res.status(400).json({ success: false, error: 'station id required' });
+    }
+    const stationRes = await pool.query(
+      `SELECT id, brand, name, address, postcode, lat, lng, fuel_finder_node_id,
+              petrol_price, diesel_price, e10_price,
+              super_unleaded_price, premium_diesel_price,
+              petrol_source, diesel_source, e10_source,
+              super_unleaded_source, premium_diesel_source,
+              petrol_updated_at, diesel_updated_at, e10_updated_at,
+              super_unleaded_updated_at, premium_diesel_updated_at,
+              fuel_types, last_updated, temporary_closure, permanent_closure
+         FROM stations WHERE id = $1`,
+      [id]
+    );
+    if (!stationRes.rows.length) {
+      return res.status(404).json({ success: false, error: 'station not found', id });
+    }
+    const s = stationRes.rows[0];
+
+    const historyRes = await pool.query(
+      `SELECT fuel_type, source, MAX(recorded_at) AS last_seen, COUNT(*)::int AS samples
+         FROM price_history
+        WHERE station_id = $1
+          AND recorded_at > NOW() - INTERVAL '7 days'
+        GROUP BY fuel_type, source
+        ORDER BY fuel_type, source`,
+      [id]
+    );
+
+    const nonGovRes = await pool.query(
+      `SELECT fuel_type, price_pence, source, scraped_at
+         FROM non_gov_prices
+        WHERE station_id = $1`,
+      [id]
+    );
+
+    const HOURS = 3_600_000;
+    const ageHours = (ts) => {
+      if (!ts) return null;
+      const t = new Date(ts).getTime();
+      if (!Number.isFinite(t)) return null;
+      return Math.round(((Date.now() - t) / HOURS) * 10) / 10;
+    };
+
+    const fuels = {};
+    const FIELDS = [
+      ['petrol', 'petrol_price', 'petrol_source', 'petrol_updated_at'],
+      ['diesel', 'diesel_price', 'diesel_source', 'diesel_updated_at'],
+      ['e10', 'e10_price', 'e10_source', 'e10_updated_at'],
+      ['super_unleaded', 'super_unleaded_price', 'super_unleaded_source', 'super_unleaded_updated_at'],
+      ['premium_diesel', 'premium_diesel_price', 'premium_diesel_source', 'premium_diesel_updated_at'],
+    ];
+    for (const [key, priceCol, sourceCol, tsCol] of FIELDS) {
+      const updatedAt = s[tsCol] || null;
+      const age = ageHours(updatedAt);
+      fuels[key] = {
+        price: s[priceCol] != null ? Number(s[priceCol]) : null,
+        winning_source: s[sourceCol] || null,
+        last_updated: updatedAt ? new Date(updatedAt).toISOString() : null,
+        age_hours: age,
+        quarantined: s[priceCol] != null && (age == null || age > 24),
+      };
+    }
+
+    return res.json({
+      success: true,
+      station: {
+        id: s.id,
+        brand: s.brand,
+        name: s.name,
+        address: s.address,
+        postcode: s.postcode,
+        fuel_finder_node_id: s.fuel_finder_node_id,
+        lat: s.lat != null ? Number(s.lat) : null,
+        lng: s.lng != null ? Number(s.lng) : null,
+        last_updated: s.last_updated ? new Date(s.last_updated).toISOString() : null,
+        temporary_closure: !!s.temporary_closure,
+        permanent_closure: !!s.permanent_closure,
+        upstream_fuel_types: s.fuel_types || null,
+      },
+      fuels,
+      price_history_recent: (historyRes.rows || []).map((r) => ({
+        fuel_type: r.fuel_type,
+        source: r.source,
+        last_seen: r.last_seen ? new Date(r.last_seen).toISOString() : null,
+        samples: r.samples,
+      })),
+      non_gov_prices: (nonGovRes.rows || []).map((r) => ({
+        fuel_type: r.fuel_type,
+        price_pence: r.price_pence != null ? Number(r.price_pence) : null,
+        source: r.source,
+        scraped_at: r.scraped_at ? new Date(r.scraped_at).toISOString() : null,
+      })),
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/v1/diagnostics/backfill-quarantine
+ * Triggers the Wave A backfill on demand. Requires the
+ * X-Admin-Token header to match ADMIN_API_TOKEN; if the env var is
+ * unset the endpoint is disabled. Useful post-deploy to re-evaluate
+ * staleness without waiting for the next ingest cycle.
+ */
+router.post('/backfill-quarantine', async (req, res, next) => {
+  try {
+    const expected = process.env.ADMIN_API_TOKEN;
+    if (!expected) {
+      return res.status(503).json({ success: false, error: 'admin endpoint disabled' });
+    }
+    const got = req.get('X-Admin-Token');
+    if (!got || got !== expected) {
+      return res.status(401).json({ success: false, error: 'unauthorized' });
+    }
+    const summary = await runBackfillQuarantine();
+    return res.json({ success: true, summary });
   } catch (err) {
     next(err);
   }

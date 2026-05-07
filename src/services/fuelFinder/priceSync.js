@@ -54,6 +54,14 @@ const PRICE_COLUMN_TO_HISTORY_FUEL = {
   premium_diesel_price: 'premium_diesel',
 };
 
+const PRICE_COLUMN_TO_TIMESTAMP_COLUMN = {
+  petrol_price: 'petrol_updated_at',
+  diesel_price: 'diesel_updated_at',
+  e10_price: 'e10_updated_at',
+  super_unleaded_price: 'super_unleaded_updated_at',
+  premium_diesel_price: 'premium_diesel_updated_at',
+};
+
 /**
  * Apply an array of column updates to a single station, keyed by
  * fuel_finder_node_id. Builds a single UPDATE with dynamic SET clauses
@@ -86,6 +94,16 @@ async function applyPriceUpdates(pool, nodeId, updates) {
     setParts.push(`${u.sourceColumn} = $${idx}`);
     values.push(SOURCE_TAG);
     idx++;
+    const tsCol = PRICE_COLUMN_TO_TIMESTAMP_COLUMN[u.priceColumn];
+    if (tsCol) {
+      // Stamp the per-field freshness timestamp from the upstream
+      // price_last_updated when available so quarantine decisions reflect
+      // the real CMA-required reporting time, not our local clock.
+      setParts.push(`${tsCol} = $${idx}`);
+      const ts = u.updatedAt ? new Date(u.updatedAt) : new Date();
+      values.push(Number.isNaN(ts.getTime()) ? new Date() : ts);
+      idx++;
+    }
   }
   setParts.push('last_updated = NOW()');
   const res = await pool.query(

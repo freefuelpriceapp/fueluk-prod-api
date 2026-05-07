@@ -18,6 +18,13 @@ const MIN_PLAUSIBLE_PRICE = 110;
 const MAX_PLAUSIBLE_PRICE = 300;
 const DEFAULT_STALE_THRESHOLD_HOURS = 48;
 
+// Per-field freshness quarantine threshold. Statutory Fuel Finder feeds must
+// publish price changes within 30 minutes; CMA brand feeds are typically
+// daily. 24h is a generous safety net that catches genuinely stuck values
+// (the B10 0AE Apple Green super_unleaded reading was over a year old) while
+// not false-flagging stations whose CMA feed simply ran on its normal cadence.
+const PER_FIELD_QUARANTINE_HOURS = 24;
+
 const PRICE_FIELDS = [
   'petrol_price',
   'diesel_price',
@@ -32,6 +39,24 @@ const SOURCE_FIELDS = {
   e10_price: 'e10_source',
   super_unleaded_price: 'super_unleaded_source',
   premium_diesel_price: 'premium_diesel_source',
+};
+
+// Per-field freshness timestamp columns.
+const UPDATED_AT_FIELDS = {
+  petrol_price: 'petrol_updated_at',
+  diesel_price: 'diesel_updated_at',
+  e10_price: 'e10_updated_at',
+  super_unleaded_price: 'super_unleaded_updated_at',
+  premium_diesel_price: 'premium_diesel_updated_at',
+};
+
+// Companion quarantine flag exposed in the API response.
+const QUARANTINED_FIELDS = {
+  petrol_price: 'petrol_price_quarantined',
+  diesel_price: 'diesel_price_quarantined',
+  e10_price: 'e10_price_quarantined',
+  super_unleaded_price: 'super_unleaded_price_quarantined',
+  premium_diesel_price: 'premium_diesel_price_quarantined',
 };
 
 // Supermarket brand names (normalized via stripPunctuation+uppercase for matching).
@@ -101,37 +126,43 @@ function mergeStations(primary, secondary) {
   const merged = { ...other, ...base };
 
   // Re-resolve each price field with source attribution.
+  // Source priority: Fuel Finder (gov) > brand-direct CMA feed > scraped.
+  // We also propagate the per-field updated_at timestamp from the winning
+  // side so quarantine decisions downstream evaluate the correct field age.
   for (const field of PRICE_FIELDS) {
     const sourceField = SOURCE_FIELDS[field];
+    const tsField = UPDATED_AT_FIELDS[field];
     const baseVal = base[field];
     const otherVal = other[field];
+
+    const assign = (winner, fallbackSource) => {
+      merged[field] = winner ? winner[field] : null;
+      merged[sourceField] = winner ? (winner[sourceField] || fallbackSource) : null;
+      merged[tsField] = winner
+        ? (winner[tsField] || winner.last_updated || null)
+        : null;
+    };
 
     if (ffSide) {
       // fuel_finder wins for premium/exotic fuels it uniquely exposes.
       const ffOnly = field === 'super_unleaded_price' || field === 'premium_diesel_price';
       if (ffOnly) {
         if (ffSide[field] != null) {
-          merged[field] = ffSide[field];
-          merged[sourceField] = ffSide[sourceField] || 'fuel_finder';
+          assign(ffSide, 'fuel_finder');
         } else if (govSide && govSide[field] != null) {
-          merged[field] = govSide[field];
-          merged[sourceField] = govSide[sourceField] || 'gov';
+          assign(govSide, 'gov');
         } else {
-          merged[field] = null;
-          merged[sourceField] = null;
+          assign(null);
         }
         continue;
       }
       // Standard fuels: prefer fuel_finder if it has a value, else fall back.
       if (ffSide[field] != null) {
-        merged[field] = ffSide[field];
-        merged[sourceField] = ffSide[sourceField] || 'fuel_finder';
+        assign(ffSide, 'fuel_finder');
       } else if (govSide && govSide[field] != null) {
-        merged[field] = govSide[field];
-        merged[sourceField] = govSide[sourceField] || 'gov';
+        assign(govSide, 'gov');
       } else {
-        merged[field] = null;
-        merged[sourceField] = null;
+        assign(null);
       }
       continue;
     }
@@ -139,19 +170,14 @@ function mergeStations(primary, secondary) {
     // No fuel_finder side — pick the fresher-valued one.
     if (baseVal != null && otherVal != null) {
       const winner = pickFresher(base.last_updated, other.last_updated);
-      merged[field] = winner === 'a' ? baseVal : otherVal;
-      merged[sourceField] = winner === 'a'
-        ? (base[sourceField] || null)
-        : (other[sourceField] || null);
+      const winnerSide = winner === 'a' ? base : other;
+      assign(winnerSide, winnerSide[sourceField] || null);
     } else if (baseVal != null) {
-      merged[field] = baseVal;
-      merged[sourceField] = base[sourceField] || null;
+      assign(base, base[sourceField] || null);
     } else if (otherVal != null) {
-      merged[field] = otherVal;
-      merged[sourceField] = other[sourceField] || null;
+      assign(other, other[sourceField] || null);
     } else {
-      merged[field] = null;
-      merged[sourceField] = null;
+      assign(null);
     }
   }
 
@@ -328,6 +354,75 @@ function validateCrossFuelPrices(stations, { logger = console } = {}) {
 }
 
 /**
+ * Per-field freshness quarantine.
+ *
+ * For each price field, if the per-field timestamp is older than
+ * `quarantineHours` (default 24), set:
+ *   - `<field>_quarantined: true`
+ *   - `<field>_quarantine_reason: 'stale_over_<n>h'`
+ *   - move the original price to `<field>_quarantined_value` so the UI
+ *     can still show it greyed-out as "data may be outdated"
+ *   - null the live `<field>` so price-comparison logic ignores it
+ *
+ * If the per-field timestamp is missing but the price isn't, we fall back
+ * to the station-wide `last_updated`. A null/missing timestamp on a
+ * non-null price is treated as quarantined-by-unknown-age — better safe
+ * than serving a stuck reading.
+ *
+ * The CRITICAL POLICY in `data_handling.md` is preserved here: we never
+ * drop the station; we only flag the bad field.
+ */
+function quarantineStaleFields(stations, {
+  quarantineHours = PER_FIELD_QUARANTINE_HOURS,
+  now = Date.now(),
+  logger = null,
+} = {}) {
+  if (!Array.isArray(stations)) return [];
+  const cutoff = now - quarantineHours * 3_600_000;
+
+  return stations.map((station) => {
+    if (!station || typeof station !== 'object') return station;
+    const next = { ...station };
+
+    for (const priceField of PRICE_FIELDS) {
+      const flagField = QUARANTINED_FIELDS[priceField];
+      if (!flagField) continue;
+
+      const price = station[priceField];
+      if (price == null) {
+        next[flagField] = false;
+        continue;
+      }
+
+      const tsField = UPDATED_AT_FIELDS[priceField];
+      const tsRaw = station[tsField] || station.last_updated || null;
+      const tsMs = tsRaw ? Date.parse(tsRaw) : NaN;
+      const isStale = !Number.isFinite(tsMs) || tsMs < cutoff;
+      if (!isStale) {
+        next[flagField] = false;
+        continue;
+      }
+
+      next[flagField] = true;
+      next[`${priceField}_quarantine_reason`] = Number.isFinite(tsMs)
+        ? `stale_over_${quarantineHours}h`
+        : 'no_timestamp';
+      next[`${priceField}_quarantined_value`] = price;
+      next[priceField] = null;
+      if (logger && typeof logger.warn === 'function') {
+        logger.warn(
+          `[Quarantine] Stale ${priceField}=${price} for station ${station.id} `
+          + `(age=${Number.isFinite(tsMs) ? Math.round((now - tsMs) / 3_600_000) + 'h' : 'unknown'}, `
+          + `source=${station[SOURCE_FIELDS[priceField]] || 'unknown'})`,
+        );
+      }
+    }
+
+    return next;
+  });
+}
+
+/**
  * Annotate each station with derived brand/freshness flags:
  *   - is_supermarket: true if brand matches a known supermarket name
  *   - price_age_hours: hours since last_updated (rounded to 1 dp) or null
@@ -415,10 +510,16 @@ module.exports = {
   mergeStations,
   isSupermarketBrand,
   selectBestOptionIndex,
+  quarantineStaleFields,
   MIN_PLAUSIBLE_PRICE,
   MAX_PLAUSIBLE_PRICE,
   COORD_TOLERANCE,
   SUPERMARKET_BRAND_KEYS,
   DEFAULT_STALE_THRESHOLD_HOURS,
+  PER_FIELD_QUARANTINE_HOURS,
   FUEL_PRICE_FIELDS,
+  PRICE_FIELDS,
+  SOURCE_FIELDS,
+  UPDATED_AT_FIELDS,
+  QUARANTINED_FIELDS,
 };

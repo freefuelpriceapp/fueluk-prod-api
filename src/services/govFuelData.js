@@ -94,17 +94,59 @@ async function syncFuelData() {
         const dieselPrice = sanitisePrice(station.prices?.B7);
         const e10Price    = sanitisePrice(station.prices?.E10);
 
+        // CMA brand feeds are SECONDARY to Fuel Finder. Only overwrite a
+        // price field if the current source is NOT 'fuel_finder' — i.e.
+        // gov-statutory data always wins. We also stamp a per-field
+        // timestamp whenever we actually wrote a value, so the response
+        // builder can quarantine fields that haven't been refreshed in 24h.
         await pool.query(
           `INSERT INTO stations (id, brand, name, address, postcode, lat, lng,
-                        petrol_price, diesel_price, e10_price, petrol_source, diesel_source, e10_source, last_updated)
-                      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())
+                        petrol_price, diesel_price, e10_price,
+                        petrol_source, diesel_source, e10_source,
+                        petrol_updated_at, diesel_updated_at, e10_updated_at,
+                        last_updated)
+                      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
+                              CASE WHEN $8::numeric  IS NOT NULL THEN NOW() ELSE NULL END,
+                              CASE WHEN $9::numeric  IS NOT NULL THEN NOW() ELSE NULL END,
+                              CASE WHEN $10::numeric IS NOT NULL THEN NOW() ELSE NULL END,
+                              NOW())
            ON CONFLICT (id) DO UPDATE SET
-                        petrol_price = COALESCE(EXCLUDED.petrol_price, stations.petrol_price),
-                        diesel_price = COALESCE(EXCLUDED.diesel_price, stations.diesel_price),
-                        e10_price = COALESCE(EXCLUDED.e10_price, stations.e10_price),
-                                                petrol_source = CASE WHEN EXCLUDED.petrol_price IS NOT NULL THEN 'gov' ELSE stations.petrol_source END,
-                        diesel_source = CASE WHEN EXCLUDED.diesel_price IS NOT NULL THEN 'gov' ELSE stations.diesel_source END,
-                        e10_source = CASE WHEN EXCLUDED.e10_price IS NOT NULL THEN 'gov' ELSE stations.e10_source END,
+                        petrol_price = CASE
+                          WHEN stations.petrol_source = 'fuel_finder' THEN stations.petrol_price
+                          WHEN EXCLUDED.petrol_price IS NOT NULL THEN EXCLUDED.petrol_price
+                          ELSE stations.petrol_price END,
+                        diesel_price = CASE
+                          WHEN stations.diesel_source = 'fuel_finder' THEN stations.diesel_price
+                          WHEN EXCLUDED.diesel_price IS NOT NULL THEN EXCLUDED.diesel_price
+                          ELSE stations.diesel_price END,
+                        e10_price = CASE
+                          WHEN stations.e10_source = 'fuel_finder' THEN stations.e10_price
+                          WHEN EXCLUDED.e10_price IS NOT NULL THEN EXCLUDED.e10_price
+                          ELSE stations.e10_price END,
+                        petrol_source = CASE
+                          WHEN stations.petrol_source = 'fuel_finder' THEN stations.petrol_source
+                          WHEN EXCLUDED.petrol_price IS NOT NULL THEN 'gov'
+                          ELSE stations.petrol_source END,
+                        diesel_source = CASE
+                          WHEN stations.diesel_source = 'fuel_finder' THEN stations.diesel_source
+                          WHEN EXCLUDED.diesel_price IS NOT NULL THEN 'gov'
+                          ELSE stations.diesel_source END,
+                        e10_source = CASE
+                          WHEN stations.e10_source = 'fuel_finder' THEN stations.e10_source
+                          WHEN EXCLUDED.e10_price IS NOT NULL THEN 'gov'
+                          ELSE stations.e10_source END,
+                        petrol_updated_at = CASE
+                          WHEN stations.petrol_source = 'fuel_finder' THEN stations.petrol_updated_at
+                          WHEN EXCLUDED.petrol_price IS NOT NULL THEN NOW()
+                          ELSE stations.petrol_updated_at END,
+                        diesel_updated_at = CASE
+                          WHEN stations.diesel_source = 'fuel_finder' THEN stations.diesel_updated_at
+                          WHEN EXCLUDED.diesel_price IS NOT NULL THEN NOW()
+                          ELSE stations.diesel_updated_at END,
+                        e10_updated_at = CASE
+                          WHEN stations.e10_source = 'fuel_finder' THEN stations.e10_updated_at
+                          WHEN EXCLUDED.e10_price IS NOT NULL THEN NOW()
+                          ELSE stations.e10_updated_at END,
             last_updated = NOW()`,
           [
             station.site_id || station.id,
