@@ -22,33 +22,43 @@ const router = require('express').Router();
 const vehicleCheckService = require('../services/vehicleCheckService');
 const dvlaService = require('../services/dvlaService');
 const dvsaService = require('../services/dvsaService');
-const { vehicleLimiter } = require('../middleware/vehicleRateLimit');
+const { vehicleLimiter, motLimiter } = require('../middleware/vehicleRateLimit');
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const MAX_CACHE_ENTRIES = 1000;
 
 const cache = new Map(); // reg -> { value, expiresAt }
+const motCache = new Map(); // reg -> { value, expiresAt }
 
-function cacheGet(reg) {
-  const entry = cache.get(reg);
-  if (!entry) return null;
-  if (entry.expiresAt <= Date.now()) {
-    cache.delete(reg);
-    return null;
-  }
-  return entry.value;
+function makeCacheGet(map) {
+  return function cacheGet(reg) {
+    const entry = map.get(reg);
+    if (!entry) return null;
+    if (entry.expiresAt <= Date.now()) {
+      map.delete(reg);
+      return null;
+    }
+    return entry.value;
+  };
 }
 
-function cacheSet(reg, value) {
-  if (cache.has(reg)) cache.delete(reg);
-  cache.set(reg, { value, expiresAt: Date.now() + CACHE_TTL_MS });
-  while (cache.size > MAX_CACHE_ENTRIES) {
-    const oldest = cache.keys().next().value;
-    cache.delete(oldest);
-  }
+function makeCacheSet(map) {
+  return function cacheSet(reg, value) {
+    if (map.has(reg)) map.delete(reg);
+    map.set(reg, { value, expiresAt: Date.now() + CACHE_TTL_MS });
+    while (map.size > MAX_CACHE_ENTRIES) {
+      const oldest = map.keys().next().value;
+      map.delete(oldest);
+    }
+  };
 }
 
-function clearCache() { cache.clear(); }
+const cacheGet = makeCacheGet(cache);
+const cacheSet = makeCacheSet(cache);
+const motCacheGet = makeCacheGet(motCache);
+const motCacheSet = makeCacheSet(motCache);
+
+function clearCache() { cache.clear(); motCache.clear(); }
 
 // UK plates use AB12 CDE — the two digits are the age identifier.
 // Period 1 (Mar–Aug) uses the year (e.g. 24 = 2024).
@@ -159,6 +169,71 @@ router.get('/insurance-check', (req, res) => {
   return res.json(INSURANCE_CHECK_METADATA);
 });
 
+/**
+ * GET /api/v1/vehicles/mot?reg=AB12CDE
+ * Returns full MOT history for the registration via the DVSA Trade API.
+ *
+ * Per-device rate limit: 20/24h (lower than /lookup's 30 because MOT
+ * lookups are higher-intent — pre-purchase checks, not casual). Results
+ * are cached per-reg for 24h. Pass ?refresh=true to bypass the cache.
+ *
+ * Responses:
+ *   200 OK — { found: true, registration, make, model, motTests, ... }
+ *   200 OK — { found: false, reg, reason: 'no_mot_records' } (DVSA 404)
+ *   400    — invalid registration
+ *   429    — device daily cap exceeded
+ *   503    — DVSA OAuth credentials not configured
+ *   502    — DVSA API error / timeout
+ */
+router.get('/mot', motLimiter, async (req, res, next) => {
+  try {
+    const reg = normaliseReg(req.query.reg);
+    if (!reg) {
+      return res.status(400).json({
+        error: 'reg query param is required (valid UK plate: letters and digits, 2–8 chars after stripping spaces)',
+      });
+    }
+
+    if (!dvsaService.isConfigured()) {
+      return res.status(503).json({
+        error: 'DVSA MOT API not configured',
+        registration: reg,
+      });
+    }
+
+    const refresh = req.query.refresh === 'true' || req.query.refresh === '1';
+    if (!refresh) {
+      const cached = motCacheGet(reg);
+      if (cached) {
+        res.setHeader('X-Cache', 'HIT');
+        return res.json(cached);
+      }
+    }
+    res.setHeader('X-Cache', refresh ? 'BYPASS' : 'MISS');
+
+    let result;
+    try {
+      result = await dvsaService.getMotHistory(reg);
+    } catch (err) {
+      const status = err && err.status && err.status >= 500 ? 502 : 502;
+      return res.status(status).json({
+        error: 'DVSA API error',
+        message: err && err.message ? err.message : 'unknown error',
+        registration: reg,
+      });
+    }
+
+    let payload;
+    if (!result || result.found === false) {
+      payload = { found: false, reg, reason: 'no_mot_records' };
+    } else {
+      payload = { ...result, reg };
+    }
+    motCacheSet(reg, payload);
+    return res.json(payload);
+  } catch (err) { next(err); }
+});
+
 router.get('/lookup', vehicleLimiter, async (req, res, next) => {
   try {
     const reg = normaliseReg(req.query.reg);
@@ -208,4 +283,5 @@ module.exports.yearFromAgeIdentifier = yearFromAgeIdentifier;
 module.exports.mockVehicleFor = mockVehicleFor;
 module.exports.clearCache = clearCache;
 module.exports._cache = cache;
+module.exports._motCache = motCache;
 module.exports.INSURANCE_CHECK_METADATA = INSURANCE_CHECK_METADATA;
