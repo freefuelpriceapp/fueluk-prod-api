@@ -345,6 +345,46 @@ async function runMigrations() {
        ON price_flag_quarantine(expires_at)`,
   );
 
+  // Wave A: per-field freshness timestamps. The shared stations.last_updated
+  // column was being bumped on every upsert touching ANY column, so it could
+  // not tell us when an individual price was last refreshed. Without a
+  // per-field timestamp we cannot decide which fields are stale enough to
+  // quarantine, and we cannot correctly rank merge sources by freshness.
+  await pool.query(`ALTER TABLE stations ADD COLUMN IF NOT EXISTS petrol_updated_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE stations ADD COLUMN IF NOT EXISTS diesel_updated_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE stations ADD COLUMN IF NOT EXISTS e10_updated_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE stations ADD COLUMN IF NOT EXISTS super_unleaded_updated_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE stations ADD COLUMN IF NOT EXISTS premium_diesel_updated_at TIMESTAMPTZ`);
+
+  // Backfill so existing rows get a sensible starting timestamp — the
+  // quarantine gate would otherwise mark every legacy field stale instantly
+  // because the column would be NULL.
+  await pool.query(`
+    UPDATE stations
+       SET petrol_updated_at = COALESCE(petrol_updated_at, last_updated)
+     WHERE petrol_price IS NOT NULL AND petrol_updated_at IS NULL
+  `);
+  await pool.query(`
+    UPDATE stations
+       SET diesel_updated_at = COALESCE(diesel_updated_at, last_updated)
+     WHERE diesel_price IS NOT NULL AND diesel_updated_at IS NULL
+  `);
+  await pool.query(`
+    UPDATE stations
+       SET e10_updated_at = COALESCE(e10_updated_at, last_updated)
+     WHERE e10_price IS NOT NULL AND e10_updated_at IS NULL
+  `);
+  await pool.query(`
+    UPDATE stations
+       SET super_unleaded_updated_at = COALESCE(super_unleaded_updated_at, last_updated)
+     WHERE super_unleaded_price IS NOT NULL AND super_unleaded_updated_at IS NULL
+  `);
+  await pool.query(`
+    UPDATE stations
+       SET premium_diesel_updated_at = COALESCE(premium_diesel_updated_at, last_updated)
+     WHERE premium_diesel_price IS NOT NULL AND premium_diesel_updated_at IS NULL
+  `);
+
   console.log('DB migrations complete.');
 }
 

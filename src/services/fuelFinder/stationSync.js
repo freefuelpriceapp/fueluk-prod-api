@@ -3,6 +3,60 @@ const { getPool } = require('../../config/db');
 const { stationToRow } = require('./mapping');
 
 /**
+ * Map of Fuel Finder fuel_type code -> price column it backs.
+ * When a station's `fuel_types` array does NOT contain a code, we
+ * explicitly clear the corresponding price column so a stale price
+ * from a lower-priority source (e.g. an old Apple Green CMA reading)
+ * cannot survive forever.
+ */
+const FUEL_TYPE_PRICE_COLUMNS = {
+  E10: { priceColumn: 'e10_price', sourceColumn: 'e10_source', tsColumn: 'e10_updated_at' },
+  E5: { priceColumn: 'super_unleaded_price', sourceColumn: 'super_unleaded_source', tsColumn: 'super_unleaded_updated_at' },
+  B7_STANDARD: { priceColumn: 'diesel_price', sourceColumn: 'diesel_source', tsColumn: 'diesel_updated_at' },
+  B7_PREMIUM: { priceColumn: 'premium_diesel_price', sourceColumn: 'premium_diesel_source', tsColumn: 'premium_diesel_updated_at' },
+};
+
+/**
+ * Clear price fields for fuel types Fuel Finder reports the station
+ * does NOT stock. This is the authoritative fix for stations whose
+ * upstream brand feed left a stale value behind (e.g. Apple Green
+ * Small Heath B10 0AE — 140p super unleaded that the brand's own
+ * feed flags as "unavailable"). We only clear fields whose current
+ * source is NOT 'fuel_finder' (we trust ourselves) — and we do not
+ * touch any field where the upstream feed has not yet certified
+ * the fuel-type list (i.e. fuel_types is null/empty).
+ */
+async function clearMissingFuelTypePrices(pool, row) {
+  if (!row || !row.fuel_finder_node_id) return 0;
+  const list = Array.isArray(row.fuel_types) ? row.fuel_types : null;
+  if (!list || list.length === 0) return 0;
+  const stocked = new Set(list.map((c) => String(c).toUpperCase()));
+  const clears = [];
+  for (const [code, cols] of Object.entries(FUEL_TYPE_PRICE_COLUMNS)) {
+    if (stocked.has(code)) continue;
+    clears.push(cols);
+  }
+  if (clears.length === 0) return 0;
+
+  const setParts = [];
+  for (const cols of clears) {
+    setParts.push(`${cols.priceColumn} = NULL`);
+    setParts.push(`${cols.sourceColumn} = NULL`);
+    setParts.push(`${cols.tsColumn} = NULL`);
+  }
+  const res = await pool.query(
+    `UPDATE stations
+        SET ${setParts.join(', ')}
+      WHERE fuel_finder_node_id = $1
+        AND (
+          ${clears.map((c, i) => `(${c.priceColumn} IS NOT NULL AND COALESCE(${c.sourceColumn}, '') <> 'fuel_finder')`).join(' OR ')}
+        )`,
+    [row.fuel_finder_node_id]
+  );
+  return res.rowCount;
+}
+
+/**
  * Pulls every station from the Fuel Finder API (batches of 500) and
  * upserts them into the `stations` table, keyed by `fuel_finder_node_id`.
  *
@@ -114,6 +168,16 @@ async function syncStations({ apiClient, pool = getPool() }) {
       try {
         await upsertStation(pool, row);
         stationsUpserted++;
+        // After upsert, clear any prices for fuel types the station does
+        // not actually stock. This is the explicit clearing rule from the
+        // brief — a stale 140p super_unleaded value that survives because
+        // the lower-priority feed marks it "unavailable" gets purged here.
+        try {
+          await clearMissingFuelTypePrices(pool, row);
+        } catch (err) {
+          // Non-fatal: never let a clear failure abort the wider sync.
+          console.warn(`[FuelFinder] clearMissingFuelTypePrices failed for ${s.node_id}:`, err.message);
+        }
       } catch (err) {
         if (errors.length < 5) {
           console.error(`[FuelFinder] Upsert failed for ${s.node_id}:`, err.message);
@@ -143,4 +207,10 @@ async function syncStations({ apiClient, pool = getPool() }) {
   return summary;
 }
 
-module.exports = { syncStations, upsertStation, BATCH_SIZE };
+module.exports = {
+  syncStations,
+  upsertStation,
+  clearMissingFuelTypePrices,
+  FUEL_TYPE_PRICE_COLUMNS,
+  BATCH_SIZE,
+};

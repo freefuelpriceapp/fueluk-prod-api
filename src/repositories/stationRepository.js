@@ -42,6 +42,7 @@ async function getNearbyStations({ lat, lng, radiusKm = 5, fuel = 'petrol', limi
             petrol_price, diesel_price, e10_price, petrol_source, diesel_source, e10_source, last_updated,
             opening_hours, amenities, is_motorway, is_supermarket, temporary_closure, permanent_closure,
             super_unleaded_price, super_unleaded_source, premium_diesel_price, premium_diesel_source, fuel_types,
+            petrol_updated_at, diesel_updated_at, e10_updated_at, super_unleaded_updated_at, premium_diesel_updated_at,
             ST_Distance(location::geography, ST_SetSRID(ST_MakePoint($2,$1),4326)::geography) AS distance_m
       FROM stations
       WHERE ST_DWithin(location::geography, ST_SetSRID(ST_MakePoint($2,$1),4326)::geography, $3)
@@ -86,7 +87,8 @@ async function searchStations({ query, fuelType, limit = 20, lat = null, lng = n
     `SELECT id, brand, name, address, postcode, lat, lng,
             petrol_price, diesel_price, e10_price, petrol_source, diesel_source, e10_source, last_updated,
             opening_hours, amenities, is_motorway, is_supermarket, temporary_closure, permanent_closure,
-            super_unleaded_price, super_unleaded_source, premium_diesel_price, premium_diesel_source, fuel_types
+            super_unleaded_price, super_unleaded_source, premium_diesel_price, premium_diesel_source, fuel_types,
+            petrol_updated_at, diesel_updated_at, e10_updated_at, super_unleaded_updated_at, premium_diesel_updated_at
             ${distanceSelect}
       FROM stations
       WHERE (LOWER(name) LIKE LOWER($1)
@@ -140,7 +142,8 @@ async function searchStationsTokens({ tokens, fuelType, limit = 20, lat = null, 
     `SELECT id, brand, name, address, postcode, lat, lng,
             petrol_price, diesel_price, e10_price, petrol_source, diesel_source, e10_source, last_updated,
             opening_hours, amenities, is_motorway, is_supermarket, temporary_closure, permanent_closure,
-            super_unleaded_price, super_unleaded_source, premium_diesel_price, premium_diesel_source, fuel_types
+            super_unleaded_price, super_unleaded_source, premium_diesel_price, premium_diesel_source, fuel_types,
+            petrol_updated_at, diesel_updated_at, e10_updated_at, super_unleaded_updated_at, premium_diesel_updated_at
             ${distanceSelect}
       FROM stations
       WHERE ${clauses} ${fuelFilter}
@@ -170,7 +173,8 @@ async function searchStationsSmart({ query, fuelType, limit = 20 }) {
       `SELECT id, brand, name, address, postcode, lat, lng,
               petrol_price, diesel_price, e10_price, petrol_source, diesel_source, e10_source, last_updated,
               opening_hours, amenities, is_motorway, is_supermarket, temporary_closure, permanent_closure,
-              super_unleaded_price, super_unleaded_source, premium_diesel_price, premium_diesel_source, fuel_types
+              super_unleaded_price, super_unleaded_source, premium_diesel_price, premium_diesel_source, fuel_types,
+            petrol_updated_at, diesel_updated_at, e10_updated_at, super_unleaded_updated_at, premium_diesel_updated_at
          FROM stations
         WHERE (UPPER(postcode) = $1
             OR REPLACE(UPPER(postcode),' ','') = $2
@@ -199,7 +203,8 @@ async function getStationById(id) {
     `SELECT id, brand, name, address, postcode, lat, lng,
         petrol_price, diesel_price, e10_price, petrol_source, diesel_source, e10_source, last_updated,
         opening_hours, amenities, is_motorway, is_supermarket, temporary_closure, permanent_closure,
-        super_unleaded_price, super_unleaded_source, premium_diesel_price, premium_diesel_source, fuel_types
+        super_unleaded_price, super_unleaded_source, premium_diesel_price, premium_diesel_source, fuel_types,
+        petrol_updated_at, diesel_updated_at, e10_updated_at, super_unleaded_updated_at, premium_diesel_updated_at
       FROM stations WHERE id = $1`,
     [id]
   );
