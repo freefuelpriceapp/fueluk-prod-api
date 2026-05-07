@@ -12,6 +12,11 @@ function envOff() {
   delete process.env.FEATURE_VEHICLE_SPEC_ENRICHMENT;
   delete process.env.CHECKCARDETAILS_API_KEY;
 }
+function envFlagDisabled() {
+  // Flag default is ON, so to truly disable we set it explicitly to "false".
+  process.env.FEATURE_VEHICLE_SPEC_ENRICHMENT = 'false';
+  delete process.env.CHECKCARDETAILS_API_KEY;
+}
 function reset() {
   vehicleSpecService.clearCache();
   vehicleSpecService._resetRateLimitForTests();
@@ -35,12 +40,23 @@ function rawTextResponse(text, status = 200) {
   };
 }
 
-test('fetchVehicleSpec returns null when feature flag off (and never calls upstream)', async () => {
+test('fetchVehicleSpec returns null when feature flag explicitly disabled (and never calls upstream)', async () => {
+  envFlagDisabled(); reset();
+  let called = false;
+  const fetchImpl = async () => { called = true; return jsonResponse({}); };
+  const result = await vehicleSpecService.fetchVehicleSpec('AB12CDE', { fetchImpl });
+  assert.equal(result, null);
+  assert.equal(called, false);
+  envOff();
+});
+
+test('fetchVehicleSpec returns null when key missing (default flag-on)', async () => {
   envOff(); reset();
   let called = false;
   const fetchImpl = async () => { called = true; return jsonResponse({}); };
   const result = await vehicleSpecService.fetchVehicleSpec('AB12CDE', { fetchImpl });
   assert.equal(result, null);
+  // Flag is on by default but key missing → no upstream call, returns null.
   assert.equal(called, false);
 });
 
@@ -193,14 +209,99 @@ test('fetchVehicleSpec invalid reg returns null', async () => {
   envOff();
 });
 
-test('isFlagEnabled is false unless env is exact "true"', () => {
+test('isFlagEnabled defaults ON; only explicit "false" disables it', () => {
   envOff();
-  assert.equal(vehicleSpecService.isFlagEnabled(), false);
+  // Env var unset → enabled (default ON)
+  assert.equal(vehicleSpecService.isFlagEnabled(), true);
+  // Empty string → enabled (treat as unset)
+  process.env.FEATURE_VEHICLE_SPEC_ENRICHMENT = '';
+  assert.equal(vehicleSpecService.isFlagEnabled(), true);
+  // Explicit "true" → enabled
+  process.env.FEATURE_VEHICLE_SPEC_ENRICHMENT = 'true';
+  assert.equal(vehicleSpecService.isFlagEnabled(), true);
+  // Explicit "TRUE" → enabled (case-insensitive)
   process.env.FEATURE_VEHICLE_SPEC_ENRICHMENT = 'TRUE';
   assert.equal(vehicleSpecService.isFlagEnabled(), true);
+  // Explicit "false" → disabled
   process.env.FEATURE_VEHICLE_SPEC_ENRICHMENT = 'false';
   assert.equal(vehicleSpecService.isFlagEnabled(), false);
+  // Other values default to enabled (anything not "false")
   process.env.FEATURE_VEHICLE_SPEC_ENRICHMENT = '1';
-  assert.equal(vehicleSpecService.isFlagEnabled(), false);
+  assert.equal(vehicleSpecService.isFlagEnabled(), true);
+  envOff();
+});
+
+test('isConfigured requires both flag-on and key-present', () => {
+  envOff();
+  // Default flag on, but no key → not configured
+  assert.equal(vehicleSpecService.isConfigured(), false);
+  // Key present, default flag on → configured
+  process.env.CHECKCARDETAILS_API_KEY = 'k';
+  assert.equal(vehicleSpecService.isConfigured(), true);
+  // Key present but flag explicitly disabled → not configured
+  process.env.FEATURE_VEHICLE_SPEC_ENRICHMENT = 'false';
+  assert.equal(vehicleSpecService.isConfigured(), false);
+  envOff();
+});
+
+test('fetchVehicleSpec returns null on 403 and negative-caches for 24h', async () => {
+  envOn(); reset();
+  vehicleSpecService._resetMetricsForTests();
+  let calls = 0;
+  const fetchImpl = async () => {
+    calls += 1;
+    return jsonResponse({ error: 'premium tier not authorised' }, 403);
+  };
+  const a = await vehicleSpecService.fetchVehicleSpec('AB12CDE', { fetchImpl });
+  const b = await vehicleSpecService.fetchVehicleSpec('AB12CDE', { fetchImpl });
+  assert.equal(a, null);
+  assert.equal(b, null);
+  // Second call should hit the negative cache, not the upstream.
+  assert.equal(calls, 1);
+  envOff();
+});
+
+test('fetchVehicleSpec 404 also negative-caches for 24h', async () => {
+  envOn(); reset();
+  let calls = 0;
+  const fetchImpl = async () => {
+    calls += 1;
+    return jsonResponse({ error: 'not found' }, 404);
+  };
+  await vehicleSpecService.fetchVehicleSpec('AB12CDE', { fetchImpl });
+  await vehicleSpecService.fetchVehicleSpec('AB12CDE', { fetchImpl });
+  assert.equal(calls, 1);
+  envOff();
+});
+
+test('fetchVehicleSpec 500 does NOT negative-cache (transient error)', async () => {
+  envOn(); reset();
+  let calls = 0;
+  const fetchImpl = async () => {
+    calls += 1;
+    return jsonResponse({ error: 'boom' }, 500);
+  };
+  await vehicleSpecService.fetchVehicleSpec('AB12CDE', { fetchImpl });
+  await vehicleSpecService.fetchVehicleSpec('AB12CDE', { fetchImpl });
+  // Both calls go upstream — 5xx is transient and shouldn't be cached.
+  assert.equal(calls, 2);
+  envOff();
+});
+
+test('getMetricsSnapshot reports calls/errors and premium tier authorisation', async () => {
+  envOn(); reset();
+  vehicleSpecService._resetMetricsForTests();
+  // One success with trim → premium authorised
+  const okFetch = async () => jsonResponse({
+    data: { spec: { model: 'GOLF', trim: 'GTI' } },
+  });
+  await vehicleSpecService.fetchVehicleSpec('AB12CDE', { fetchImpl: okFetch });
+  // One error
+  const errFetch = async () => jsonResponse({ error: 'no' }, 500);
+  await vehicleSpecService.fetchVehicleSpec('XY34ZAB', { fetchImpl: errFetch });
+  const snap = vehicleSpecService.getMetricsSnapshot();
+  assert.equal(snap.last_24h_calls, 2);
+  assert.equal(snap.last_24h_errors, 1);
+  assert.equal(snap.premium_tier_authorised, true);
   envOff();
 });

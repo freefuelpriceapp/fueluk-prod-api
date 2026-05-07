@@ -41,7 +41,7 @@ All non-MVP flags are `false` at launch.
 | `ROAD_REPORTS` | ❌ | ❌ | `false` | Future | Community hazard/traffic reports |
 | `REWARDS` | ❌ | ❌ | `false` | Future | Loyalty/savings rewards programme |
 | `MONETIZATION` | ❌ | ❌ | `false` | Future | In-app advertising or sponsorship |
-| `VEHICLE_SPEC_ENRICHMENT` | ✅ | ❌ | `false` | DVSA G1 | checkcardetails.co.uk vehicle spec enrichment (model/variant/trim/body). Off until `CHECKCARDETAILS_API_KEY` is wired. |
+| `VEHICLE_SPEC_ENRICHMENT` | ✅ | ❌ | `true` | DVSA G1 | checkcardetails.co.uk vehicle spec enrichment (model/variant/trim/body). Default ON; without `CHECKCARDETAILS_API_KEY` the service is a safe no-op. Set to `false` to disable explicitly. |
 
 ---
 

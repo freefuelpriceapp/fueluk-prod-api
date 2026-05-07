@@ -12,6 +12,7 @@
 const router = require('express').Router();
 const { getPool } = require('../config/db');
 const { runBackfillQuarantine } = require('../jobs/backfillQuarantine');
+const vehicleSpecService = require('../services/vehicleSpecService');
 
 function deriveStatus({ lastGovSyncAgeHours, stationTotal, staleOver7Days }) {
   const stalePct = stationTotal > 0 ? (staleOver7Days / stationTotal) * 100 : 0;
@@ -176,6 +177,12 @@ router.get('/', async (req, res, next) => {
       alerts: {
         total_active: alerts.total_active || 0,
         fired_last_24h: alerts.fired_last_24h || 0,
+      },
+      vehicle_spec: {
+        provider: 'checkcardetails',
+        flag_enabled: vehicleSpecService.isFlagEnabled(),
+        key_present: Boolean(process.env.CHECKCARDETAILS_API_KEY),
+        ...vehicleSpecService.getMetricsSnapshot(),
       },
     });
   } catch (err) {
