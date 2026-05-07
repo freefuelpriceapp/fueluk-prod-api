@@ -12,7 +12,11 @@ router.get('/', async (req, res, next) => {
     }
     const result = await getPool().query(
       `SELECT s.id, s.brand, s.name, s.address, s.postcode,
-          s.lat, s.lng, s.petrol_price, s.diesel_price, s.e10_price, s.last_updated
+          s.lat, s.lng,
+          s.petrol_price, s.diesel_price, s.e10_price,
+          s.super_unleaded_price, s.premium_diesel_price,
+          s.opening_hours, s.is_motorway, s.is_supermarket,
+          s.last_updated
        FROM user_favourites uf
        JOIN stations s ON s.id = uf.station_id
        WHERE uf.device_token = $1

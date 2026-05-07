@@ -40,7 +40,7 @@ const PRIVACY_HTML = `<!DOCTYPE html>
 
   <h2>2. Data Controller</h2>
   <address>
-  <strong>Free Fuel Price App Ltd</strong><br>
+  <strong>FuelUK (Free Fuel Price App Ltd)</strong><br>
   38 Shawbury Grove<br>
   Birmingham, B12 0TT<br>
   United Kingdom<br>
@@ -203,7 +203,7 @@ const PRIVACY_HTML = `<!DOCTYPE html>
 
   <h2>14. Contact</h2>
   <address>
-  Free Fuel Price App Ltd<br>
+  FuelUK (Free Fuel Price App Ltd)<br>
   38 Shawbury Grove, Birmingham, B12 0TT, United Kingdom<br>
   Email: <a href="mailto:support@freefuelpriceapp.com">support@freefuelpriceapp.com</a><br>
   Support page: <a href="https://api.freefuelpriceapp.com/support">https://api.freefuelpriceapp.com/support</a>
