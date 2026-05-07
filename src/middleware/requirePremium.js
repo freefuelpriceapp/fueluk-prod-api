@@ -34,7 +34,7 @@ async function requirePremium(req, res, next) {
       return res.status(403).json({
         success: false,
         error: 'Premium subscription required',
-        message: 'Upgrade to FreeFuelPrice Premium to access this feature',
+        message: 'Upgrade to FuelUK Premium to access this feature',
         upgrade_url: '/api/v1/premium/register',
       });
     }
