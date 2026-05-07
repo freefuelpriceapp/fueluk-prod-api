@@ -26,6 +26,7 @@ const { scheduleFuelFinder } = require('./services/fuelFinder');
 const { startIngestRunner } = require('./jobs/ingestRunner');
 const { startAlertJob } = require('./jobs/alertJob');
 const { startRetentionJob } = require('./jobs/retentionJob');
+const { startDiagnosticsHealthCheck } = require('./jobs/diagnosticsHealthCheck');
 const { runBackfillQuarantine } = require('./jobs/backfillQuarantine');
 
 const PORT = process.env.PORT || 3000;
@@ -114,6 +115,7 @@ async function start() {
     startIngestRunner();
     startAlertJob();
     startRetentionJob();
+    startDiagnosticsHealthCheck();
 
     // Wave A one-shot backfill: re-evaluate every station's price fields
     // against the new staleness rules and clear any stuck values that the
