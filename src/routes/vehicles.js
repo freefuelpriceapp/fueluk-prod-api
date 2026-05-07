@@ -133,12 +133,25 @@ function mockVehicleFor(reg) {
     dvlaAvailable: false,
     motHistoryAvailable: false,
     motHistory: [],
+    // Promoted spec fields — always present so the mobile client can rely
+    // on a stable schema even in mock mode.
+    trim: null,
+    variant: null,
+    transmission: null,
+    doors: null,
+    body_style: null,
+    engine_capacity_cc: pick.engineCapacity,
+    fuel_type_detailed: null,
+    model_full: pick.model,
+    spec_source: 'unavailable',
+    spec: null,
     estimated_mpg: estimateMpg(pick.fuelType, pick.engineCapacity),
     source: 'mock',
     checkedAt: new Date().toISOString(),
     sources: {
       dvla: { available: false, error: 'DVLA_API_KEY not configured' },
       mot: { available: false, error: 'DVSA_MOT_API_KEY not configured' },
+      spec: { available: false, error: null },
       insurance: { available: false, error: 'askMID insurance check not yet configured' },
     },
   };
@@ -260,7 +273,7 @@ router.get('/spec', specLimiter, async (req, res, next) => {
       });
     }
 
-    if (!vehicleSpecService.isFlagEnabled()) {
+    if (!vehicleSpecService.isConfigured()) {
       return res.status(503).json({
         error: 'Vehicle spec enrichment not enabled',
         registration: reg,

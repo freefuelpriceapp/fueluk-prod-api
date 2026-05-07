@@ -38,6 +38,47 @@ function mapMotHistory(raw) {
   }));
 }
 
+// Promoted spec keys — always present on the response, null when enrichment
+// is disabled or upstream couldn't supply a value. This keeps the schema
+// stable for the mobile client regardless of upstream availability.
+const SPEC_KEYS_DEFAULT = Object.freeze({
+  trim: null,
+  variant: null,
+  transmission: null,
+  doors: null,
+  body_style: null,
+  engine_capacity_cc: null,
+  fuel_type_detailed: null,
+  model_full: null,
+});
+
+function _deriveSpecSource(spec, flagEnabled) {
+  if (spec) return 'checkcardetails';
+  if (!flagEnabled) return 'dvla_only';
+  return 'unavailable';
+}
+
+function _flattenSpecFields(spec, dvla) {
+  if (!spec) {
+    return {
+      ...SPEC_KEYS_DEFAULT,
+      // Even without enrichment, fall back to whatever DVLA gave us so the
+      // engine_capacity_cc field is consistently populated when possible.
+      engine_capacity_cc: dvla?.engineCapacity || null,
+    };
+  }
+  return {
+    trim: spec.trim || null,
+    variant: spec.variant || null,
+    transmission: spec.transmission || null,
+    doors: spec.doors == null ? null : spec.doors,
+    body_style: spec.bodyStyle || null,
+    engine_capacity_cc: dvla?.engineCapacity || null,
+    fuel_type_detailed: spec.fuelDescription || null,
+    model_full: spec.derivative || spec.variant || spec.model || null,
+  };
+}
+
 function toUnifiedResponse(reg, dvlaResult, motResult, specResult) {
   const dvla = dvlaResult?.data || null;
   const motHistory = mapMotHistory(motResult?.data);
@@ -45,11 +86,15 @@ function toUnifiedResponse(reg, dvlaResult, motResult, specResult) {
   const dvlaHasData = Boolean(dvla) && !dvlaResult?.notFound;
   const motHasData = motResult?.available && !motResult?.notFound;
   const spec = specResult && specResult.data ? specResult.data : null;
+  const flagEnabled = require('./vehicleSpecService').isFlagEnabled();
 
   // Back-compat: DVLA often returns model: null. If our spec service has
   // a model, surface it at the root so existing clients reading `.model`
   // start working without code changes.
   const rootModel = (dvla?.model) || (spec && spec.model) || null;
+
+  const specFields = _flattenSpecFields(spec, dvla);
+  const specSource = _deriveSpecSource(spec, flagEnabled);
 
   return {
     registration: dvla?.registrationNumber || reg,
@@ -74,6 +119,10 @@ function toUnifiedResponse(reg, dvlaResult, motResult, specResult) {
     dvlaAvailable: dvlaHasData,
     motHistoryAvailable: motHasData,
     motHistory,
+    // Standard spec fields — always present, null when unavailable.
+    ...specFields,
+    spec_source: specSource,
+    // Detailed nested spec (kept for callers that consume the full object).
     spec,
     checkedAt: new Date().toISOString(),
     sources: {
@@ -122,4 +171,5 @@ module.exports = {
   lookupVehicle,
   toUnifiedResponse,
   mapMotHistory,
+  SPEC_KEYS_DEFAULT,
 };
