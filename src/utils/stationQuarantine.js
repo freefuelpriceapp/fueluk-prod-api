@@ -8,13 +8,24 @@
  * from the government feed and once from fuel_finder. We merge them at
  * response time by matching on postcode + approximate coordinates.
  *
- * Sanitize: prices below 110p or above 300p/L are clearly wrong and are
- * nullified before returning to the client. Ingest historically let a few
- * bad values through (e.g. Asda Swanley at 100p petrol).
+ * Sanitize: prices outside per-field plausibility bands are clearly wrong
+ * and are nullified before returning to the client. Per-field floors
+ * reflect UK May-2026 market reality — a single 110p floor was too lenient
+ * (it let EG Small Heath Highway PFS through at petrol_price=140 even though
+ * E5 super never sells below ~150p).
  */
 
 const COORD_TOLERANCE = 0.0005; // ~50m at UK latitudes
-const MIN_PLAUSIBLE_PRICE = 110;
+const MIN_PLAUSIBLE_PRICE_BY_FIELD = {
+  petrol_price: 150,
+  e10_price: 130,
+  super_unleaded_price: 150,
+  diesel_price: 140,
+  premium_diesel_price: 150,
+};
+const MIN_PLAUSIBLE_PRICE_FALLBACK = 130;
+// Backward-compat: prior code/tests imported a single MIN_PLAUSIBLE_PRICE.
+const MIN_PLAUSIBLE_PRICE = MIN_PLAUSIBLE_PRICE_FALLBACK;
 const MAX_PLAUSIBLE_PRICE = 300;
 const DEFAULT_STALE_THRESHOLD_HOURS = 48;
 
@@ -266,9 +277,14 @@ function deduplicateStations(stations) {
 }
 
 /**
- * Null out obviously wrong fuel prices (outside 110p–300p) on each station.
- * Logs every quarantined field so we can track which source produced the
- * bogus data. Mutates copies, not the input objects.
+ * Null out obviously wrong fuel prices on each station, using per-field
+ * minimum floors and a shared 300p ceiling. Quarantined values are
+ * preserved on `<field>_quarantined_value` for audit; the live `<field>`
+ * is set to null and `<field>_quarantined` / `<field>_quarantine_reason`
+ * flags are emitted so the UI can explain why the price is missing.
+ *
+ * Station identity and location are never altered — per data policy we
+ * only quarantine the bad field, never hide the station.
  */
 function sanitizeStationPrices(stations, { logger = console } = {}) {
   if (!Array.isArray(stations)) return [];
@@ -284,15 +300,20 @@ function sanitizeStationPrices(stations, { logger = console } = {}) {
       if (raw == null) continue;
       const num = Number(raw);
       if (!Number.isFinite(num)) continue;
-      if (num < MIN_PLAUSIBLE_PRICE || num > MAX_PLAUSIBLE_PRICE) {
+      const minFloor = MIN_PLAUSIBLE_PRICE_BY_FIELD[field] ?? MIN_PLAUSIBLE_PRICE_FALLBACK;
+      if (num < minFloor || num > MAX_PLAUSIBLE_PRICE) {
         changed = true;
         next[field] = null;
+        next[QUARANTINED_FIELDS[field]] = true;
+        next[`${field}_quarantine_reason`] = 'implausible_value';
+        next[`${field}_quarantined_value`] = num;
         const sourceField = SOURCE_FIELDS[field];
         const source = station[sourceField] || 'unknown';
         if (logger && typeof logger.warn === 'function') {
           logger.warn(
             `[Quarantine] Dropped ${field}=${num} for station ${station.id} `
-            + `(postcode=${station.postcode || 'n/a'}, source=${source})`,
+            + `(postcode=${station.postcode || 'n/a'}, source=${source}, `
+            + `floor=${minFloor})`,
           );
         }
       }
@@ -512,6 +533,8 @@ module.exports = {
   selectBestOptionIndex,
   quarantineStaleFields,
   MIN_PLAUSIBLE_PRICE,
+  MIN_PLAUSIBLE_PRICE_BY_FIELD,
+  MIN_PLAUSIBLE_PRICE_FALLBACK,
   MAX_PLAUSIBLE_PRICE,
   COORD_TOLERANCE,
   SUPERMARKET_BRAND_KEYS,
