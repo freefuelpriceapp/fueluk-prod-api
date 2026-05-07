@@ -77,6 +77,53 @@ GitHub → AWS CodePipeline → CodeBuild → ECR → ECS Fargate
 | GET | `/api/v1/premium/status` | Check premium status |
 | POST | `/api/v1/premium/cancel` | Cancel subscription |
 
+### Vehicles
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/vehicles/lookup?reg=...` | DVLA + DVSA + spec, unified |
+| GET | `/api/v1/vehicles/mot?reg=...` | DVSA MOT history only |
+| GET | `/api/v1/vehicles/spec?reg=...` | Vehicle spec enrichment only (model/variant/trim/body/etc.) |
+| GET | `/api/v1/vehicles/insurance-check` | MIB Navigate metadata for the in-app deep-link |
+
+`/lookup` response shape (relevant fields):
+
+```jsonc
+{
+  "registration": "LR15ROV",
+  "make": "LAND ROVER",
+  "model": "RANGE ROVER SPORT",       // back-filled from spec when DVLA returns null
+  "spec": {
+    "model": "RANGE ROVER SPORT",
+    "variant": "SDV6 HSE Dynamic",
+    "trim": "HSE Dynamic",
+    "derivative": "3.0 SDV6 HSE Dynamic 5dr Auto",
+    "bodyStyle": "SUV",
+    "transmission": "AUTOMATIC",
+    "doors": 5,
+    "seats": 5,
+    "engineDescription": "3.0L V6 Diesel",
+    "fuelDescription": "Diesel",
+    "drivetrain": "4WD",
+    "source": "checkcardetails",
+    "fetchedAt": "2026-05-07T12:00:00.000Z"
+  },
+  "sources": {
+    "dvla":  { "available": true,  "error": null },
+    "mot":   { "available": true,  "error": null },
+    "spec":  { "available": true,  "error": null },
+    "insurance": { "available": false, "error": "askMID insurance check not yet configured" }
+  }
+}
+```
+
+When the spec service is disabled (`FEATURE_VEHICLE_SPEC_ENRICHMENT` ≠ `true`)
+or the upstream is unreachable, `spec` is `null` and `sources.spec.available`
+is `false` — the rest of the response is unaffected.
+
+`/spec` returns `{ found: true|false, registration, spec? }` and is intended
+for the upcoming DVSA G1 pre-purchase check flow which doesn't need the
+DVSA MOT history overhead. Returns `503` when the feature flag is off.
+
 ---
 
 ## Local Development
