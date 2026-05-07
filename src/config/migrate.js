@@ -403,12 +403,11 @@ async function runMigrations() {
   `);
   // Index for aggregation queries by outcode + fuel_type + date
   await pool.query(
-    \`CREATE INDEX IF NOT EXISTS idx_rgt_outcode_fuel_date
-       ON receipt_groundtruth(postcode_outcode, fuel_type, receipt_date DESC)\`
+    'CREATE INDEX IF NOT EXISTS idx_rgt_outcode_fuel_date ON receipt_groundtruth(postcode_outcode, fuel_type, receipt_date DESC)'
   );
   // Index for time-based aggregation (diagnostics last_24h / last_7d)
   await pool.query(
-    \`CREATE INDEX IF NOT EXISTS idx_rgt_ingested_at ON receipt_groundtruth(ingested_at DESC)\`
+    'CREATE INDEX IF NOT EXISTS idx_rgt_ingested_at ON receipt_groundtruth(ingested_at DESC)'
   );
 
   console.log('DB migrations complete.');
