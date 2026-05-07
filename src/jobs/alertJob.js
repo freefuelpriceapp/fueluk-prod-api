@@ -63,33 +63,82 @@ async function runAlertCheck() {
   console.log(`[AlertJob] Running alert check at ${startedAt.toISOString()}`);
 
   try {
-    // Find all alerts that should fire
+    // Wave B (B-04): full fuel taxonomy coverage.
+    //
+    // Modern alert fuel_type values (mobile lib/fuelTaxonomy.js):
+    //   unleaded         → cheaper-of(e10_price, petrol_price)  [Wave A.2 resolveUnleadedPrice]
+    //   super_unleaded   → super_unleaded_price
+    //   diesel           → diesel_price
+    //   premium_diesel   → premium_diesel_price
+    //
+    // Legacy alert rows must keep firing — translated in-query:
+    //   petrol  → unleaded (super-set: cheaper of e10/petrol)
+    //   e10     → unleaded
+    //   e5      → super_unleaded
+    //
+    // Quarantine respect: per-field quarantine (Wave A.1) writes NULL to the
+    // price column. The current_price expression and the threshold filter
+    // both use IS NOT NULL gates, so a quarantined value cannot fire.
     const { rows: triggeredAlerts } = await pool.query(`
+      WITH alerts_normalized AS (
+        SELECT
+          pa.id,
+          pa.device_token,
+          pa.platform,
+          pa.fuel_type AS original_fuel_type,
+          CASE pa.fuel_type
+            WHEN 'petrol' THEN 'unleaded'
+            WHEN 'e10'    THEN 'unleaded'
+            WHEN 'e5'     THEN 'super_unleaded'
+            ELSE pa.fuel_type
+          END AS fuel_type,
+          pa.threshold_pence,
+          pa.station_id,
+          pa.last_notified_at
+        FROM price_alerts pa
+        WHERE pa.active = true
+      )
       SELECT
         pa.id,
         pa.device_token,
         pa.platform,
         pa.fuel_type,
+        pa.original_fuel_type,
         pa.threshold_pence,
-        s.name   AS station_name,
-        s.brand  AS station_brand,
+        s.name    AS station_name,
+        s.brand   AS station_brand,
         s.address AS station_address,
         CASE pa.fuel_type
-          WHEN 'petrol' THEN s.petrol_price
-          WHEN 'diesel' THEN s.diesel_price
-          WHEN 'e10'    THEN s.e10_price
+          WHEN 'unleaded'       THEN LEAST(
+                                       COALESCE(s.e10_price, s.petrol_price),
+                                       COALESCE(s.petrol_price, s.e10_price)
+                                     )
+          WHEN 'super_unleaded' THEN s.super_unleaded_price
+          WHEN 'diesel'         THEN s.diesel_price
+          WHEN 'premium_diesel' THEN s.premium_diesel_price
         END AS current_price
-      FROM price_alerts pa
+      FROM alerts_normalized pa
       JOIN stations s ON s.id = pa.station_id
-      WHERE pa.active = true
-        AND (
+      WHERE (
           pa.last_notified_at IS NULL
           OR pa.last_notified_at < NOW() - INTERVAL '${NOTIFY_COOLDOWN_HOURS} hours'
         )
         AND (
-          (pa.fuel_type = 'petrol' AND s.petrol_price IS NOT NULL AND s.petrol_price <= pa.threshold_pence)
-          OR (pa.fuel_type = 'diesel' AND s.diesel_price IS NOT NULL AND s.diesel_price <= pa.threshold_pence)
-          OR (pa.fuel_type = 'e10'    AND s.e10_price    IS NOT NULL AND s.e10_price    <= pa.threshold_pence)
+          (pa.fuel_type = 'unleaded'
+              AND (s.e10_price IS NOT NULL OR s.petrol_price IS NOT NULL)
+              AND LEAST(
+                    COALESCE(s.e10_price, s.petrol_price),
+                    COALESCE(s.petrol_price, s.e10_price)
+                  ) <= pa.threshold_pence)
+          OR (pa.fuel_type = 'super_unleaded'
+              AND s.super_unleaded_price IS NOT NULL
+              AND s.super_unleaded_price <= pa.threshold_pence)
+          OR (pa.fuel_type = 'diesel'
+              AND s.diesel_price IS NOT NULL
+              AND s.diesel_price <= pa.threshold_pence)
+          OR (pa.fuel_type = 'premium_diesel'
+              AND s.premium_diesel_price IS NOT NULL
+              AND s.premium_diesel_price <= pa.threshold_pence)
         )
     `);
 
