@@ -168,16 +168,20 @@ test('fetchVehicleSpec cache miss for different reg', async () => {
   envOff();
 });
 
-test('fetchVehicleSpec sends x-api-key header and reg in URL', async () => {
+test('fetchVehicleSpec sends apikey query param and reg in URL', async () => {
   envOn(); reset();
   let captured = null;
   const fetchImpl = async (url, init) => {
     captured = { url, init };
-    return jsonResponse({ data: { spec: { model: 'X' } } });
+    return jsonResponse({ model: 'X' });
   };
   await vehicleSpecService.fetchVehicleSpec('ab12 cde', { fetchImpl });
   assert.match(captured.url, /vrm=AB12CDE/);
-  assert.equal(captured.init.headers['x-api-key'], 'test-key');
+  assert.match(captured.url, /apikey=test-key/);
+  assert.match(captured.url, /\/vehicleregistration\?/);
+  // header-based auth no longer used; ensure none of the request headers contain the key
+  const headerVals = Object.values(captured.init.headers || {}).join(' ');
+  assert.ok(!headerVals.includes('test-key'));
   assert.equal(captured.init.method, 'GET');
   envOff();
 });

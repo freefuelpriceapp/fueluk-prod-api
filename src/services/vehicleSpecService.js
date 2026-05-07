@@ -67,11 +67,13 @@
  *
  * NOTE: The exact upstream endpoint shape is documented at
  *   https://api.checkcardetails.co.uk (Vehicle Spec / UK Vehicle Data tier).
- *   This implementation assumes:
- *     GET {base}/vehiclespec?vrm={REG}
- *     header: x-api-key: {CHECKCARDETAILS_API_KEY}
- *   If the docs say otherwise, adjust buildRequest() — it's the only place
- *   the upstream contract leaks.
+ *   Confirmed via live probe (May 2026):
+ *     GET {base}/vehicleregistration?apikey={KEY}&vrm={REG}
+ *     (no auth header — apikey is a query parameter)
+ *   This is the £0.02 "Vehicle Registration" tier. The fuller £0.10
+ *   "UK Vehicle Data" tier (with trim/variant/transmission/doors) lives at
+ *   /ukvehicledata and currently returns 403 until premium access is
+ *   requested via api.checkcardetails.co.uk/support/premiumdatarequest.
  */
 
 const DEFAULT_API_BASE = 'https://api.checkcardetails.co.uk/vehicledata';
@@ -148,11 +150,14 @@ function _resetRateLimitForTests() {
 // ---- upstream call --------------------------------------------------------
 
 function buildRequest(reg) {
-  const url = `${getApiBase()}/vehiclespec?vrm=${encodeURIComponent(reg)}`;
-  const headers = {
-    'x-api-key': process.env.CHECKCARDETAILS_API_KEY,
-    Accept: 'application/json',
-  };
+  // checkcardetails.co.uk uses ?apikey= query param, not header.
+  // Endpoint is /vehicleregistration (Vehicle Registration tier, £0.02/lookup,
+  // returns make, model, colour, fuel, year, engine, tax, MOT). The fuller
+  // /ukvehicledata tier (with trim/variant/transmission/doors) requires a
+  // separate "premium data" access request — see backlog.
+  const key = encodeURIComponent(process.env.CHECKCARDETAILS_API_KEY || '');
+  const url = `${getApiBase()}/vehicleregistration?apikey=${key}&vrm=${encodeURIComponent(reg)}`;
+  const headers = { Accept: 'application/json' };
   return { url, headers };
 }
 
@@ -202,6 +207,11 @@ function normalise(raw) {
       spec,
       'drivetrain', 'driveType', 'wheelDrive', 'driveTrain',
     ),
+    // Also surface make + year + colour from spec source so /lookup callers
+    // can use the upstream-confirmed values when DVLA is missing them.
+    make: pick(spec, 'make') || pick(root, 'make'),
+    year: toInt(pick(spec, 'yearOfManufacture', 'year') || pick(root, 'yearOfManufacture')),
+    colour: pick(spec, 'colour', 'color') || pick(root, 'colour'),
     source: 'checkcardetails',
     fetchedAt: new Date().toISOString(),
   };
