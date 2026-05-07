@@ -21,8 +21,18 @@ router.post('/', async (req, res, next) => {
       });
     }
 
-    if (!['petrol', 'diesel', 'e10'].includes(fuel_type)) {
-      return res.status(400).json({ error: 'fuel_type must be petrol, diesel, or e10' });
+    // Wave B (B-04): accept full fuel taxonomy (modern + legacy).
+    // Modern: unleaded, super_unleaded, diesel, premium_diesel
+    // Legacy: petrol/e10 → unleaded equivalents, e5 → super_unleaded; the alert
+    // job translates these at evaluation time so they continue to fire.
+    const ALLOWED_FUEL_TYPES = [
+      'unleaded', 'super_unleaded', 'diesel', 'premium_diesel',
+      'petrol', 'e10', 'e5',
+    ];
+    if (!ALLOWED_FUEL_TYPES.includes(fuel_type)) {
+      return res.status(400).json({
+        error: `fuel_type must be one of: ${ALLOWED_FUEL_TYPES.join(', ')}`,
+      });
     }
 
     const result = await getPool().query(

@@ -7,7 +7,7 @@ const PRIVACY_HTML = `<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Privacy Policy - FreeFuelPrice UK</title>
+  <title>Privacy Policy - FuelUK</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 760px; margin: 0 auto; padding: 20px; color: #333; line-height: 1.6; }
     h1 { color: #1a73e8; }
@@ -24,10 +24,10 @@ const PRIVACY_HTML = `<!DOCTYPE html>
   <h1>Privacy Policy</h1>
   <p><strong>Effective date:</strong> 20 April 2026<br>
   <strong>Last updated:</strong> 20 April 2026<br>
-  <strong>App:</strong> FreeFuelPrice UK v9.1.0 (iOS &amp; Android)</p>
+  <strong>App:</strong> FuelUK v9.1.0 (iOS &amp; Android)</p>
 
   <h2>1. Summary</h2>
-  <p>FreeFuelPrice UK is a fuel price comparison app for UK drivers. It is privacy-first:</p>
+  <p>FuelUK is a fuel price comparison app for UK drivers. It is privacy-first:</p>
   <ul>
     <li><strong>No user accounts.</strong> We do not collect your name, email address, phone number, or password. There is no sign-up or login.</li>
     <li><strong>No advertising.</strong> No ads, no ad SDKs, no marketing attribution.</li>
@@ -108,7 +108,7 @@ const PRIVACY_HTML = `<!DOCTYPE html>
   </table>
 
   <h2>4. What We Do NOT Collect</h2>
-  <p>FreeFuelPrice UK does <strong>not</strong> collect any of the following:</p>
+  <p>FuelUK does <strong>not</strong> collect any of the following:</p>
   <ul>
     <li>Name, email address, phone number, postal address, or date of birth</li>
     <li>Passwords or authentication credentials (there are no user accounts)</li>
@@ -216,7 +216,7 @@ const SUPPORT_HTML = `<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Support - FreeFuelPrice UK</title>
+  <title>Support - FuelUK</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 700px; margin: 0 auto; padding: 20px; color: #333; line-height: 1.6; }
     h1 { color: #1a73e8; }
@@ -226,7 +226,7 @@ const SUPPORT_HTML = `<!DOCTYPE html>
 </head>
 <body>
   <h1>Support</h1>
-  <p>Need help with FreeFuelPrice UK? We are here to assist.</p>
+  <p>Need help with FuelUK? We are here to assist.</p>
   <h2>Contact Us</h2>
   <p>Email: <a href="mailto:support@freefuelpriceapp.com">support@freefuelpriceapp.com</a></p>
   <h2>FAQs</h2>
