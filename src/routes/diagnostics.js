@@ -13,6 +13,88 @@ const router = require('express').Router();
 const { getPool } = require('../config/db');
 const { runBackfillQuarantine } = require('../jobs/backfillQuarantine');
 const vehicleSpecService = require('../services/vehicleSpecService');
+const dvsaService = require('../services/dvsaService');
+
+function buildVehicleMotDiagnostics() {
+  const flagEnabled = dvsaService.isConfigured();
+  const keyPresent = Boolean(process.env.DVSA_API_KEY);
+  const snapshot = typeof dvsaService.getMetricsSnapshot === 'function'
+    ? dvsaService.getMetricsSnapshot()
+    : {};
+  return {
+    provider: 'dvsa',
+    flag_enabled: flagEnabled,
+    key_present: keyPresent,
+    last_24h_calls: snapshot.last_24h_calls || 0,
+    last_24h_errors: snapshot.last_24h_errors || 0,
+    last_24h_not_found: snapshot.last_24h_not_found || 0,
+    token_cache_hit_rate: snapshot.token_cache_hit_rate == null ? null : Number(snapshot.token_cache_hit_rate.toFixed(3)),
+    window_started_at: snapshot.window_started_at || null,
+  };
+}
+
+// Outcode = first chunk of UK postcode before the space (e.g. "B10", "BT4").
+// We bucket Northern Ireland (BT*) into a single "BT" region so the audit's
+// 90% NI blackout shows up cleanly instead of as 100+ individual outcodes.
+const REGION_BLACKOUT_THRESHOLD_PCT = 30;
+const REGIONAL_BLACKOUT_EVENT = 'regional_blackout_detected';
+
+function regionFromPostcode(pc) {
+  if (!pc) return null;
+  const cleaned = String(pc).replace(/\s+/g, '').toUpperCase();
+  if (!cleaned) return null;
+  if (cleaned.startsWith('BT')) return 'BT';
+  // Outcode = leading letters + leading digits
+  const m = cleaned.match(/^([A-Z]{1,2})(\d[A-Z\d]?)/);
+  if (!m) return null;
+  return m[1] + m[2];
+}
+
+async function getRegionalNullRates(pool, { logger = console } = {}) {
+  let rows;
+  try {
+    const res = await pool.query(`
+      SELECT postcode,
+             (petrol_price IS NULL AND diesel_price IS NULL AND e10_price IS NULL) AS all_null
+      FROM stations
+      WHERE postcode IS NOT NULL AND postcode <> ''
+    `);
+    rows = res.rows || [];
+  } catch (err) {
+    if (logger && typeof logger.warn === 'function') {
+      logger.warn(`[diagnostics] regional null-rate query failed: ${err.message}`);
+    }
+    return {};
+  }
+
+  const counts = new Map();
+  for (const r of rows) {
+    const region = regionFromPostcode(r.postcode);
+    if (!region) continue;
+    let entry = counts.get(region);
+    if (!entry) { entry = { total: 0, nulls: 0 }; counts.set(region, entry); }
+    entry.total += 1;
+    if (r.all_null) entry.nulls += 1;
+  }
+
+  const out = {};
+  for (const [region, entry] of counts) {
+    if (entry.total < 10) continue; // ignore micro-regions
+    const pct = (entry.nulls / entry.total) * 100;
+    out[region] = Number(pct.toFixed(1));
+    if (pct >= REGION_BLACKOUT_THRESHOLD_PCT && logger && typeof logger.warn === 'function') {
+      logger.warn(JSON.stringify({
+        level: 'warn',
+        event: REGIONAL_BLACKOUT_EVENT,
+        region,
+        null_pct: Number(pct.toFixed(1)),
+        total_stations: entry.total,
+        null_stations: entry.nulls,
+      }));
+    }
+  }
+  return out;
+}
 
 function deriveStatus({ lastGovSyncAgeHours, stationTotal, staleOver7Days }) {
   const stalePct = stationTotal > 0 ? (staleOver7Days / stationTotal) * 100 : 0;
@@ -184,6 +266,8 @@ router.get('/', async (req, res, next) => {
         key_present: Boolean(process.env.CHECKCARDETAILS_API_KEY),
         ...vehicleSpecService.getMetricsSnapshot(),
       },
+      vehicle_mot: buildVehicleMotDiagnostics(),
+      regional_null_rates: await getRegionalNullRates(pool),
     });
   } catch (err) {
     next(err);
@@ -333,3 +417,7 @@ router.post('/backfill-quarantine', async (req, res, next) => {
 
 module.exports = router;
 module.exports._deriveStatus = deriveStatus;
+module.exports._regionFromPostcode = regionFromPostcode;
+module.exports._getRegionalNullRates = getRegionalNullRates;
+module.exports._buildVehicleMotDiagnostics = buildVehicleMotDiagnostics;
+module.exports.REGION_BLACKOUT_THRESHOLD_PCT = REGION_BLACKOUT_THRESHOLD_PCT;

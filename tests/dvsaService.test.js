@@ -5,6 +5,11 @@ const assert = require('node:assert/strict');
 const dvsaService = require('../src/services/dvsaService');
 const { createTokenManager, parseMotResponse, normaliseReg } = dvsaService;
 
+function resetDvsaState() {
+  dvsaService.clearNegativeCache();
+  dvsaService._resetMetricsForTests();
+}
+
 // ---------- helpers ----------
 
 function envOn() {
@@ -50,20 +55,20 @@ test('isConfigured: false when none set', () => {
 });
 
 test('isConfigured: true when all four are set', () => {
-  envOn();
+  envOn(); resetDvsaState();
   assert.equal(dvsaService.isConfigured(), true);
   envOff();
 });
 
 test('isConfigured: false if API key missing', () => {
-  envOn();
+  envOn(); resetDvsaState();
   delete process.env.DVSA_API_KEY;
   assert.equal(dvsaService.isConfigured(), false);
   envOff();
 });
 
 test('isConfigured: false if token url missing', () => {
-  envOn();
+  envOn(); resetDvsaState();
   delete process.env.DVSA_TOKEN_URL;
   assert.equal(dvsaService.isConfigured(), false);
   envOff();
@@ -84,7 +89,7 @@ test('normaliseReg: empty / null safe', () => {
 // ---------- token manager ----------
 
 test('tokenManager: fetches token on first call and caches it', async () => {
-  envOn();
+  envOn(); resetDvsaState();
   let calls = 0;
   const fetchImpl = async () => {
     calls += 1;
@@ -100,7 +105,7 @@ test('tokenManager: fetches token on first call and caches it', async () => {
 });
 
 test('tokenManager: refreshes when within skew window of expiry', async () => {
-  envOn();
+  envOn(); resetDvsaState();
   let calls = 0;
   let nowMs = 1_000_000;
   const fetchImpl = async () => {
@@ -119,7 +124,7 @@ test('tokenManager: refreshes when within skew window of expiry', async () => {
 });
 
 test('tokenManager: invalidate forces a fresh fetch', async () => {
-  envOn();
+  envOn(); resetDvsaState();
   let calls = 0;
   const fetchImpl = async () => {
     calls += 1;
@@ -140,7 +145,7 @@ test('tokenManager: throws on missing creds', async () => {
 });
 
 test('tokenManager: throws on non-2xx token endpoint response', async () => {
-  envOn();
+  envOn(); resetDvsaState();
   const fetchImpl = async () => textResponse(500, 'boom');
   const tm = createTokenManager({ fetchImpl });
   await assert.rejects(() => tm.getAccessToken(), /DVSA token endpoint 500/);
@@ -148,7 +153,7 @@ test('tokenManager: throws on non-2xx token endpoint response', async () => {
 });
 
 test('tokenManager: throws when access_token missing in body', async () => {
-  envOn();
+  envOn(); resetDvsaState();
   const fetchImpl = async () => jsonResponse(200, { expires_in: 3600 });
   const tm = createTokenManager({ fetchImpl });
   await assert.rejects(() => tm.getAccessToken(), /missing access_token/);
@@ -156,7 +161,7 @@ test('tokenManager: throws when access_token missing in body', async () => {
 });
 
 test('tokenManager: deduplicates concurrent in-flight requests', async () => {
-  envOn();
+  envOn(); resetDvsaState();
   let calls = 0;
   const fetchImpl = async () => {
     calls += 1;
@@ -175,7 +180,7 @@ test('tokenManager: deduplicates concurrent in-flight requests', async () => {
 });
 
 test('tokenManager: posts urlencoded grant_type=client_credentials', async () => {
-  envOn();
+  envOn(); resetDvsaState();
   let bodySeen = null;
   let headersSeen = null;
   const fetchImpl = async (_url, init) => {
@@ -268,7 +273,7 @@ function stubTokenManager(token = 'TEST_TOKEN') {
 }
 
 test('getMotHistory: 200 returns parsed payload', async () => {
-  envOn();
+  envOn(); resetDvsaState();
   const fetchImpl = async (_url, init) => {
     assert.match(init.headers.Authorization, /^Bearer /);
     assert.equal(init.headers['X-API-Key'], 'apikey-xyz');
@@ -286,7 +291,7 @@ test('getMotHistory: 200 returns parsed payload', async () => {
 });
 
 test('getMotHistory: 404 returns { found: false }', async () => {
-  envOn();
+  envOn(); resetDvsaState();
   const fetchImpl = async () => jsonResponse(404, {});
   const r = await dvsaService.getMotHistory('AB12CDE', { fetchImpl, tokenManager: stubTokenManager() });
   assert.deepEqual(r, { found: false });
@@ -294,7 +299,7 @@ test('getMotHistory: 404 returns { found: false }', async () => {
 });
 
 test('getMotHistory: throws on 5xx', async () => {
-  envOn();
+  envOn(); resetDvsaState();
   const fetchImpl = async () => textResponse(503, 'upstream down');
   await assert.rejects(
     () => dvsaService.getMotHistory('AB12CDE', { fetchImpl, tokenManager: stubTokenManager() }),
@@ -304,7 +309,7 @@ test('getMotHistory: throws on 5xx', async () => {
 });
 
 test('getMotHistory: throws on 400 with structured error', async () => {
-  envOn();
+  envOn(); resetDvsaState();
   const fetchImpl = async () => textResponse(400, 'bad reg');
   try {
     await dvsaService.getMotHistory('AB12CDE', { fetchImpl, tokenManager: stubTokenManager() });
@@ -317,7 +322,7 @@ test('getMotHistory: throws on 400 with structured error', async () => {
 });
 
 test('getMotHistory: 401 invalidates token and retries once', async () => {
-  envOn();
+  envOn(); resetDvsaState();
   let calls = 0;
   const fetchImpl = async () => {
     calls += 1;
@@ -333,7 +338,7 @@ test('getMotHistory: 401 invalidates token and retries once', async () => {
 });
 
 test('getMotHistory: 401 twice in a row throws (no infinite retry)', async () => {
-  envOn();
+  envOn(); resetDvsaState();
   let calls = 0;
   const fetchImpl = async () => { calls += 1; return textResponse(401, 'still expired'); };
   await assert.rejects(
@@ -345,7 +350,7 @@ test('getMotHistory: 401 twice in a row throws (no infinite retry)', async () =>
 });
 
 test('getMotHistory: timeout produces DVSA_TIMEOUT error', async () => {
-  envOn();
+  envOn(); resetDvsaState();
   const fetchImpl = async () => {
     const err = new Error('aborted');
     err.name = 'AbortError';
@@ -361,13 +366,13 @@ test('getMotHistory: timeout produces DVSA_TIMEOUT error', async () => {
 });
 
 test('getMotHistory: requires registration', async () => {
-  envOn();
+  envOn(); resetDvsaState();
   await assert.rejects(() => dvsaService.getMotHistory(''), /registration is required/);
   envOff();
 });
 
 test('getMotHistory: passes token from manager into Authorization header', async () => {
-  envOn();
+  envOn(); resetDvsaState();
   let seen = null;
   const fetchImpl = async (_url, init) => {
     seen = init.headers.Authorization;
@@ -379,7 +384,7 @@ test('getMotHistory: passes token from manager into Authorization header', async
 });
 
 test('getMotHistory: hits configured DVSA_API_BASE', async () => {
-  envOn();
+  envOn(); resetDvsaState();
   process.env.DVSA_API_BASE = 'https://custom.example.com/v9/trade';
   let seenUrl = null;
   const fetchImpl = async (url) => {
@@ -401,7 +406,7 @@ test('fetchMotHistory: returns not-configured envelope when env missing', async 
 });
 
 test('fetchMotHistory: 404 maps to { available: true, notFound: true }', async () => {
-  envOn();
+  envOn(); resetDvsaState();
   const fetchImpl = async () => jsonResponse(404, {});
   const r = await dvsaService.fetchMotHistory('AB12CDE', { fetchImpl, tokenManager: stubTokenManager() });
   assert.equal(r.available, true);
@@ -411,7 +416,7 @@ test('fetchMotHistory: 404 maps to { available: true, notFound: true }', async (
 });
 
 test('fetchMotHistory: 200 maps to legacy [{motTests:[{defects}]}] shape', async () => {
-  envOn();
+  envOn(); resetDvsaState();
   const fetchImpl = async () => jsonResponse(200, {
     registration: 'X', make: 'FORD',
     motTests: [{
@@ -428,7 +433,7 @@ test('fetchMotHistory: 200 maps to legacy [{motTests:[{defects}]}] shape', async
 });
 
 test('fetchMotHistory: 5xx maps to { available: false, error }', async () => {
-  envOn();
+  envOn(); resetDvsaState();
   const fetchImpl = async () => textResponse(502, 'gateway');
   const r = await dvsaService.fetchMotHistory('X', { fetchImpl, tokenManager: stubTokenManager() });
   assert.equal(r.available, false);

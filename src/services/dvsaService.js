@@ -26,7 +26,84 @@
 const DEFAULT_API_BASE = 'https://history.mot.api.gov.uk/v1/trade';
 const DEFAULT_SCOPE = 'https://tapi.dvsa.gov.uk/.default';
 const DEFAULT_TIMEOUT_MS = 8000;
-const REFRESH_SKEW_MS = 60 * 1000;
+// Refresh proactively at ~80% of the token lifetime. DVSA tokens last ~3600s,
+// so REFRESH_SKEW_MS = 720s means we refresh once <12 min remain. This avoids
+// edge cases where 60s skew would still let an in-flight call see a 401.
+const REFRESH_SKEW_MS = 12 * 60 * 1000;
+// 24h negative cache for confirmed-not-in-DVSA-DB results. Re-querying for a
+// reg the API just told us doesn't exist wastes our daily quota.
+const NEGATIVE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const NEGATIVE_CACHE_MAX_ENTRIES = 5000;
+// Retry budget for transient 429/5xx — exponential backoff with jitter.
+const RETRY_5XX_MAX_ATTEMPTS = 3;
+const RETRY_BASE_MS = 250;
+
+// In-process counters for diagnostics. Reset by _resetMetricsForTests().
+const metrics = {
+  windowStartedAt: Date.now(),
+  calls: 0,
+  errors: 0,
+  notFound: 0,
+  tokenFetches: 0,
+  tokenCacheHits: 0,
+  tokenCacheMisses: 0,
+};
+
+function _recordCall() { metrics.calls += 1; }
+function _recordError() { metrics.errors += 1; }
+function _recordNotFound() { metrics.notFound += 1; }
+function _recordTokenHit() { metrics.tokenCacheHits += 1; }
+function _recordTokenMiss() { metrics.tokenCacheMisses += 1; metrics.tokenFetches += 1; }
+
+function _resetMetricsForTests() {
+  metrics.windowStartedAt = Date.now();
+  metrics.calls = 0;
+  metrics.errors = 0;
+  metrics.notFound = 0;
+  metrics.tokenFetches = 0;
+  metrics.tokenCacheHits = 0;
+  metrics.tokenCacheMisses = 0;
+}
+
+function getMetricsSnapshot() {
+  const total = metrics.tokenCacheHits + metrics.tokenCacheMisses;
+  const hitRate = total > 0 ? metrics.tokenCacheHits / total : null;
+  return {
+    last_24h_calls: metrics.calls,
+    last_24h_errors: metrics.errors,
+    last_24h_not_found: metrics.notFound,
+    token_fetches: metrics.tokenFetches,
+    token_cache_hit_rate: hitRate,
+    window_started_at: new Date(metrics.windowStartedAt).toISOString(),
+  };
+}
+
+// Negative cache: reg -> expiresAt. We only store 404s (no_results); transient
+// 5xx results are NOT cached so the next request can recover.
+const negativeCache = new Map();
+
+function negCacheGet(reg) {
+  const entry = negativeCache.get(reg);
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    negativeCache.delete(reg);
+    return null;
+  }
+  return entry;
+}
+
+function negCacheSet(reg) {
+  if (negativeCache.has(reg)) negativeCache.delete(reg);
+  negativeCache.set(reg, { expiresAt: Date.now() + NEGATIVE_CACHE_TTL_MS });
+  while (negativeCache.size > NEGATIVE_CACHE_MAX_ENTRIES) {
+    const oldest = negativeCache.keys().next().value;
+    negativeCache.delete(oldest);
+  }
+}
+
+function clearNegativeCache() { negativeCache.clear(); }
+
+function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 function isConfigured() {
   return Boolean(
@@ -119,8 +196,12 @@ function createTokenManager({
   }
 
   async function getAccessToken() {
-    if (isValid()) return accessToken;
+    if (isValid()) {
+      _recordTokenHit();
+      return accessToken;
+    }
     if (inFlight) return inFlight;
+    _recordTokenMiss();
     inFlight = fetchToken().finally(() => { inFlight = null; });
     return inFlight;
   }
@@ -159,54 +240,87 @@ async function getMotHistory(registration, opts = {}) {
   const reg = normaliseReg(registration);
   if (!reg) throw new Error('registration is required');
 
+  // 24h negative cache for 404 (no_results). Skip with opts.skipNegativeCache.
+  if (!opts.skipNegativeCache && negCacheGet(reg)) {
+    _recordCall();
+    _recordNotFound();
+    return { found: false, cached: 'negative' };
+  }
+
   const fetchImpl = opts.fetchImpl || ((...args) => fetch(...args));
   const tokenManager = opts.tokenManager || defaultTokenManager;
   const timeoutMs = opts.timeoutMs || DEFAULT_TIMEOUT_MS;
+  const maxAttempts = Number.isFinite(opts.maxAttempts) ? opts.maxAttempts : RETRY_5XX_MAX_ATTEMPTS;
 
-  const token = await tokenManager.getAccessToken();
+  _recordCall();
+
   const url = `${getApiBase()}/vehicles/registration/${encodeURIComponent(reg)}`;
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  let res;
-  try {
-    res = await fetchImpl(url, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'X-API-Key': process.env.DVSA_API_KEY,
-        Accept: 'application/json+v6',
-      },
-      signal: controller.signal,
-    });
-  } catch (err) {
-    if (err && err.name === 'AbortError') {
-      const e = new Error('DVSA API timeout');
-      e.code = 'DVSA_TIMEOUT';
+  let attempt = 0;
+  let tokenAlreadyRefreshed = Boolean(opts._retried);
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    attempt += 1;
+    const token = await tokenManager.getAccessToken();
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let res;
+    try {
+      res = await fetchImpl(url, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'X-API-Key': process.env.DVSA_API_KEY,
+          Accept: 'application/json+v6',
+        },
+        signal: controller.signal,
+      });
+    } catch (err) {
+      clearTimeout(timer);
+      if (err && err.name === 'AbortError') {
+        _recordError();
+        const e = new Error('DVSA API timeout');
+        e.code = 'DVSA_TIMEOUT';
+        throw e;
+      }
+      _recordError();
+      const e = new Error(`DVSA API request failed: ${err.message}`);
+      e.code = 'DVSA_NETWORK';
       throw e;
     }
-    const e = new Error(`DVSA API request failed: ${err.message}`);
-    e.code = 'DVSA_NETWORK';
-    throw e;
-  } finally {
     clearTimeout(timer);
-  }
 
-  if (res.status === 404) return { found: false };
-  if (res.status === 401 && !opts._retried) {
-    tokenManager.invalidate();
-    return getMotHistory(registration, { ...opts, _retried: true });
-  }
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    const e = new Error(`DVSA API ${res.status}: ${text.slice(0, 200)}`);
-    e.code = 'DVSA_HTTP';
-    e.status = res.status;
-    throw e;
-  }
+    if (res.status === 404) {
+      _recordNotFound();
+      negCacheSet(reg);
+      return { found: false };
+    }
+    if (res.status === 401 && !tokenAlreadyRefreshed) {
+      tokenManager.invalidate();
+      tokenAlreadyRefreshed = true;
+      continue;
+    }
+    if ((res.status === 429 || (res.status >= 500 && res.status < 600)) && attempt < maxAttempts) {
+      // Exponential backoff with jitter: 250ms, 500ms, 1s ...
+      const base = RETRY_BASE_MS * Math.pow(2, attempt - 1);
+      const jitter = Math.floor(Math.random() * RETRY_BASE_MS);
+      await sleep(base + jitter);
+      continue;
+    }
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      _recordError();
+      const e = new Error(`DVSA API ${res.status}: ${text.slice(0, 200)}`);
+      e.code = 'DVSA_HTTP';
+      e.status = res.status;
+      throw e;
+    }
 
-  const json = await res.json();
-  return parseMotResponse(json, reg);
+    const json = await res.json();
+    return parseMotResponse(json, reg);
+  }
 }
 
 /**
@@ -309,6 +423,11 @@ module.exports = {
   parseMotResponse,
   fetchMotHistory,
   createTokenManager,
+  getMetricsSnapshot,
+  clearNegativeCache,
+  _resetMetricsForTests,
   DEFAULT_API_BASE,
   DEFAULT_SCOPE,
+  NEGATIVE_CACHE_TTL_MS,
+  RETRY_5XX_MAX_ATTEMPTS,
 };
