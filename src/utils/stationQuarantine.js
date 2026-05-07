@@ -375,6 +375,93 @@ function validateCrossFuelPrices(stations, { logger = console } = {}) {
 }
 
 /**
+ * Wave B.1b: Cross-field inversion validator.
+ *
+ * Several ASDA Express Petrol sites (B92, CV4, LS11, M8, NE4, SR4, G5)
+ * publish super_unleaded_price 1–2p BELOW petrol_price. E5 super is a
+ * premium grade — it cannot be cheaper than the standard E5 it's based
+ * on, nor below E10. Likewise premium_diesel must be >= diesel.
+ *
+ * For each detected inversion we quarantine the offending field using
+ * the same {field}_quarantine_reason / {field}_quarantined_value sibling
+ * fields Wave A.1 introduced, with a `cross_field_inversion_*` reason so
+ * the UI / metrics can distinguish from staleness or implausibility.
+ *
+ * Note: we DO already null E5 (petrol_price) when petrol < e10 in
+ * validateCrossFuelPrices; this validator extends that to also stamp
+ * the per-field quarantine sibling fields and to cover the new super<petrol,
+ * super<e10, premium_diesel<diesel cases.
+ *
+ * Mutates copies only.
+ */
+function validateCrossFieldRelationships(stations, { logger = console } = {}) {
+  if (!Array.isArray(stations)) return [];
+
+  const RULES = [
+    {
+      field: 'super_unleaded_price',
+      against: 'petrol_price',
+      reason: 'cross_field_inversion_super_lt_petrol',
+      cmp: (sub, ref) => sub < ref,
+    },
+    {
+      field: 'super_unleaded_price',
+      against: 'e10_price',
+      reason: 'cross_field_inversion_super_lt_e10',
+      cmp: (sub, ref) => sub < ref,
+    },
+    {
+      field: 'petrol_price',
+      against: 'e10_price',
+      reason: 'cross_field_inversion_petrol_lt_e10',
+      cmp: (sub, ref) => sub < ref,
+    },
+    {
+      field: 'premium_diesel_price',
+      against: 'diesel_price',
+      reason: 'cross_field_inversion_premium_lt_standard',
+      cmp: (sub, ref) => sub < ref,
+    },
+  ];
+
+  return stations.map((station) => {
+    if (!station || typeof station !== 'object') return station;
+
+    let next = station;
+    let changed = false;
+
+    for (const rule of RULES) {
+      const subVal = station[rule.field];
+      const refVal = station[rule.against];
+      if (subVal == null || refVal == null) continue;
+      const subNum = Number(subVal);
+      const refNum = Number(refVal);
+      if (!Number.isFinite(subNum) || !Number.isFinite(refNum)) continue;
+      // Skip a field that's already been quarantined upstream — don't double-stamp.
+      if (next[QUARANTINED_FIELDS[rule.field]]) continue;
+      if (!rule.cmp(subNum, refNum)) continue;
+
+      if (!changed) { next = { ...station }; changed = true; }
+      next[rule.field] = null;
+      next[QUARANTINED_FIELDS[rule.field]] = true;
+      next[`${rule.field}_quarantine_reason`] = rule.reason;
+      next[`${rule.field}_quarantined_value`] = subNum;
+      const sourceField = SOURCE_FIELDS[rule.field];
+      const source = station[sourceField] || 'unknown';
+      if (logger && typeof logger.warn === 'function') {
+        logger.warn(
+          `[Quarantine] Cross-field inversion ${rule.field}=${subNum} `
+          + `< ${rule.against}=${refNum} for station ${station.id} `
+          + `(postcode=${station.postcode || 'n/a'}, source=${source}, reason=${rule.reason})`,
+        );
+      }
+    }
+
+    return next;
+  });
+}
+
+/**
  * Per-field freshness quarantine.
  *
  * For each price field, if the per-field timestamp is older than
@@ -527,6 +614,7 @@ module.exports = {
   deduplicateStations,
   sanitizeStationPrices,
   validateCrossFuelPrices,
+  validateCrossFieldRelationships,
   annotateStations,
   mergeStations,
   isSupermarketBrand,

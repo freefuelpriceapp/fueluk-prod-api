@@ -79,9 +79,86 @@ function _flattenSpecFields(spec, dvla) {
   };
 }
 
+function pickLatestTest(motHistory) {
+  if (!Array.isArray(motHistory) || !motHistory.length) return null;
+  let latest = null;
+  let latestMs = -Infinity;
+  for (const t of motHistory) {
+    if (!t || !t.testDate) continue;
+    const ms = Date.parse(t.testDate);
+    if (Number.isFinite(ms) && ms > latestMs) {
+      latestMs = ms;
+      latest = t;
+    }
+  }
+  return latest;
+}
+
+/**
+ * Build the standard mot_* schema fields. These are ALWAYS present on the
+ * /lookup response (null when unavailable). Wave B.1 contract.
+ */
+function buildMotSchema(motResult, motHistory) {
+  const motHasData = Boolean(motResult?.available) && !motResult?.notFound;
+  if (!motHasData) {
+    return {
+      mot_status: null,
+      mot_expiry_date: null,
+      mot_last_test_date: null,
+      mot_last_test_result: null,
+      mot_advisories: [],
+      mot_defects: [],
+      mot_test_count: 0,
+      mot_odometer_at_last_test: null,
+      mot_source: 'unavailable',
+    };
+  }
+
+  const latest = pickLatestTest(motHistory) || null;
+  const expiry = latest && latest.expiryDate ? latest.expiryDate : null;
+  let status = 'no_results';
+  if (expiry) {
+    const expMs = Date.parse(expiry);
+    if (Number.isFinite(expMs)) {
+      status = expMs >= Date.now() ? 'valid' : 'expired';
+    }
+  }
+
+  const defects = Array.isArray(latest?.defects) ? latest.defects : [];
+  const advisoryStrings = defects
+    .filter((d) => String(d.type || '').toUpperCase() === 'ADVISORY')
+    .map((d) => d.text)
+    .filter(Boolean);
+  const defectStrings = defects
+    .filter((d) => {
+      const t = String(d.type || '').toUpperCase();
+      return t && t !== 'ADVISORY';
+    })
+    .map((d) => d.text)
+    .filter(Boolean);
+
+  let odo = null;
+  if (latest && latest.mileage != null) {
+    odo = { value: Number(latest.mileage), unit: latest.mileageUnit || null };
+  }
+
+  return {
+    mot_status: status,
+    mot_expiry_date: expiry,
+    mot_last_test_date: latest ? latest.testDate : null,
+    mot_last_test_result: latest ? latest.result : null,
+    mot_advisories: advisoryStrings,
+    mot_defects: defectStrings,
+    mot_test_count: motHistory.length,
+    mot_odometer_at_last_test: odo,
+    mot_source: 'dvsa',
+  };
+}
+
 function toUnifiedResponse(reg, dvlaResult, motResult, specResult) {
   const dvla = dvlaResult?.data || null;
   const motHistory = mapMotHistory(motResult?.data);
+  const motSchema = buildMotSchema(motResult, motHistory);
 
   const dvlaHasData = Boolean(dvla) && !dvlaResult?.notFound;
   const motHasData = motResult?.available && !motResult?.notFound;
@@ -122,6 +199,7 @@ function toUnifiedResponse(reg, dvlaResult, motResult, specResult) {
     // Standard spec fields — always present, null when unavailable.
     ...specFields,
     spec_source: specSource,
+    ...motSchema,
     // Detailed nested spec (kept for callers that consume the full object).
     spec,
     checkedAt: new Date().toISOString(),
@@ -172,4 +250,5 @@ module.exports = {
   toUnifiedResponse,
   mapMotHistory,
   SPEC_KEYS_DEFAULT,
+  buildMotSchema,
 };
