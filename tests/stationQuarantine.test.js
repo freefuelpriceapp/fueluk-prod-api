@@ -147,7 +147,7 @@ test('mergeStations without a fuel_finder side picks the fresher price', () => {
   assert.equal(merged.petrol_price, 154.9);
 });
 
-test('sanitizeStationPrices nullifies prices below 110p/L', () => {
+test('sanitizeStationPrices nullifies prices below the per-field minimum floor', () => {
   const out = sanitizeStationPrices(
     [gov({ petrol_price: 100, e10_price: 99.9 })],
     { logger: silentLogger },
@@ -165,13 +165,87 @@ test('sanitizeStationPrices nullifies prices above 300p/L', () => {
   assert.equal(out[0].diesel_price, null);
 });
 
-test('sanitizeStationPrices keeps prices at the 110 and 300 boundaries', () => {
+test('sanitizeStationPrices keeps prices at the per-field min floor and 300 ceiling', () => {
+  // petrol floor 150, e10 floor 130, diesel floor 140, super 150, premium-diesel 150.
   const out = sanitizeStationPrices(
-    [gov({ petrol_price: 110, diesel_price: 300 })],
+    [gov({
+      petrol_price: 150,
+      e10_price: 130,
+      diesel_price: 140,
+      super_unleaded_price: 150,
+      premium_diesel_price: 300,
+    })],
     { logger: silentLogger },
   );
-  assert.equal(out[0].petrol_price, 110);
-  assert.equal(out[0].diesel_price, 300);
+  assert.equal(out[0].petrol_price, 150);
+  assert.equal(out[0].e10_price, 130);
+  assert.equal(out[0].diesel_price, 140);
+  assert.equal(out[0].super_unleaded_price, 150);
+  assert.equal(out[0].premium_diesel_price, 300);
+});
+
+test('sanitizeStationPrices quarantines petrol_price=140 (B10 0AE EG Small Heath regression)', () => {
+  // Real-world May-2026 case: gov feed served petrol_price=140 for the EG
+  // Small Heath Highway PFS; E5 super never sells below ~150p in the UK.
+  const calls = [];
+  const out = sanitizeStationPrices(
+    [gov({
+      id: 'gcq-eg-small-heath',
+      name: 'EG SMALL HEATH HIGHWAY PFS',
+      postcode: 'B10 0AE',
+      petrol_price: 140,
+    })],
+    { logger: { warn: (m) => calls.push(m) } },
+  );
+  assert.equal(out[0].petrol_price, null, 'live petrol_price nulled');
+  assert.equal(out[0].petrol_price_quarantined, true);
+  assert.equal(out[0].petrol_price_quarantine_reason, 'implausible_value');
+  assert.equal(out[0].petrol_price_quarantined_value, 140);
+  // Identity preserved.
+  assert.equal(out[0].id, 'gcq-eg-small-heath');
+  assert.equal(out[0].name, 'EG SMALL HEATH HIGHWAY PFS');
+  assert.equal(out[0].postcode, 'B10 0AE');
+  assert.equal(out[0].lat, 52.4775);
+  assert.equal(out[0].lon, -1.8556);
+  assert.match(calls[0] || '', /Dropped petrol_price=140/);
+});
+
+test('sanitizeStationPrices: real petrol_price=169.9 still passes', () => {
+  const out = sanitizeStationPrices(
+    [gov({ petrol_price: 169.9 })],
+    { logger: silentLogger },
+  );
+  assert.equal(out[0].petrol_price, 169.9);
+  assert.equal(out[0].petrol_price_quarantined, undefined);
+});
+
+test('sanitizeStationPrices: e10_price=135 passes (lower per-field floor of 130)', () => {
+  const out = sanitizeStationPrices(
+    [gov({ e10_price: 135 })],
+    { logger: silentLogger },
+  );
+  assert.equal(out[0].e10_price, 135);
+});
+
+test('sanitizeStationPrices: diesel_price=138 is quarantined (below floor 140)', () => {
+  const out = sanitizeStationPrices(
+    [gov({ diesel_price: 138 })],
+    { logger: silentLogger },
+  );
+  assert.equal(out[0].diesel_price, null);
+  assert.equal(out[0].diesel_price_quarantined, true);
+  assert.equal(out[0].diesel_price_quarantine_reason, 'implausible_value');
+  assert.equal(out[0].diesel_price_quarantined_value, 138);
+});
+
+test('sanitizeStationPrices: super_unleaded floor 150 catches a stuck 145p reading', () => {
+  const out = sanitizeStationPrices(
+    [ff({ super_unleaded_price: 145 })],
+    { logger: silentLogger },
+  );
+  assert.equal(out[0].super_unleaded_price, null);
+  assert.equal(out[0].super_unleaded_price_quarantined, true);
+  assert.equal(out[0].super_unleaded_price_quarantined_value, 145);
 });
 
 test('sanitizeStationPrices leaves null prices alone and returns original object when unchanged', () => {

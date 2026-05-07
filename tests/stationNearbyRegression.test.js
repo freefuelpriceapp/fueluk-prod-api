@@ -60,7 +60,7 @@ function applegreen(overrides = {}) {
     postcode: 'B10 0AE',
     lat: 52.472,
     lng: -1.872,
-    petrol_price: 140.0,
+    petrol_price: 150.8,
     diesel_price: 148.9,
     e10_price: 138.9,
     super_unleaded_price: null,
@@ -157,7 +157,7 @@ test('[regression] /nearby best_option picks the closer+cheaper station and expl
   const best = res.body.best_option;
   assert.ok(best, 'best_option must be populated');
   assert.match(best.name, /Small Heath/i);
-  assert.equal(best.petrol_price, 140.0);
+  assert.equal(best.petrol_price, 150.8);
   assert.equal(best.is_best_option, true);
   assert.ok(best.selected_reason);
   assert.match(best.selected_reason, /cheapest/i);
