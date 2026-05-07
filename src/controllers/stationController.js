@@ -8,11 +8,13 @@ const {
   deduplicateStations,
   sanitizeStationPrices,
   validateCrossFuelPrices,
+  validateCrossFieldRelationships,
   annotateStations,
   selectBestOptionIndex,
   quarantineStaleFields,
   DEFAULT_STALE_THRESHOLD_HOURS,
 } = require('../utils/stationQuarantine');
+const { applyCmaFailover } = require('../services/cmaFailoverService');
 
 function envFlag(name, defaultOn = true) {
   const raw = process.env[name];
@@ -101,7 +103,14 @@ function cleanList(stations, { staleThresholdHours } = {}) {
   // gov/fuel_finder rows. The station is NEVER hidden — only fields are
   // quarantined per data_handling.md.
   const quarantined = quarantineStaleFields(deduped);
-  return annotateStations(quarantined, { staleThresholdHours });
+  // Wave B.1a: try recovering quarantined-stale fields from the CMA brand
+  // snapshot. Feature-flagged off; when off, this just stamps source_used
+  // = 'fuel_finder' for telemetry.
+  const failedOver = applyCmaFailover(quarantined);
+  // Wave B.1b: cross-field inversion check (super<petrol, etc). Runs after
+  // failover so we evaluate the actually-served price set.
+  const crossFieldChecked = validateCrossFieldRelationships(failedOver);
+  return annotateStations(crossFieldChecked, { staleThresholdHours });
 }
 
 function annotateBestOption(stations, { fuelType, radiusMiles } = {}) {
@@ -279,7 +288,9 @@ async function getById(req, res, next) {
     const sanitized = sanitizeStationPrices([station]);
     const validated = validateCrossFuelPrices(sanitized);
     const fieldQuarantined = quarantineStaleFields(validated);
-    const [annotated] = annotateStations(fieldQuarantined, { staleThresholdHours });
+    const failedOver = applyCmaFailover(fieldQuarantined);
+    const crossFieldChecked = validateCrossFieldRelationships(failedOver);
+    const [annotated] = annotateStations(crossFieldChecked, { staleThresholdHours });
     return res.json({ success: true, station: annotated });
   } catch (err) {
     next(err);
