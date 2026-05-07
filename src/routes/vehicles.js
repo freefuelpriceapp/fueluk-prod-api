@@ -1,5 +1,6 @@
 'use strict';
 const router = require('express').Router();
+const { deriveFuelFields } = require('../utils/dvlaFuelCategory');
 
 /**
  * Vehicle lookup by UK registration plate.
@@ -146,6 +147,9 @@ function mockVehicleFor(reg) {
     spec_source: 'unavailable',
     spec: null,
     estimated_mpg: estimateMpg(pick.fuelType, pick.engineCapacity),
+    // Wave A.8: add authoritative fuel fields to mock responses too so
+    // the schema is consistent regardless of source.
+    ...deriveFuelFields(pick.fuelType),
     source: 'mock',
     checkedAt: new Date().toISOString(),
     sources: {

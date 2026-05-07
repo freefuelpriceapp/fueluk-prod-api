@@ -1,5 +1,7 @@
 'use strict';
 
+const { deriveFuelFields } = require('../utils/dvlaFuelCategory');
+
 /**
  * vehicleCheckService.js
  * Orchestrates DVLA + DVSA MOT lookups and merges them into the unified
@@ -173,6 +175,11 @@ function toUnifiedResponse(reg, dvlaResult, motResult, specResult) {
   const specFields = _flattenSpecFields(spec, dvla);
   const specSource = _deriveSpecSource(spec, flagEnabled);
 
+  // Wave A.8: derive authoritative fuel_type (lowercase) and fuel_category
+  // (canonical taxonomy key) from DVLA's raw fuelType.  Both fields are
+  // added alongside the existing camelCase fuelType for backwards compat.
+  const { fuel_type: derivedFuelType, fuel_category } = deriveFuelFields(dvla?.fuelType);
+
   return {
     registration: dvla?.registrationNumber || reg,
     make: dvla?.make || null,
@@ -180,6 +187,9 @@ function toUnifiedResponse(reg, dvlaResult, motResult, specResult) {
     colour: dvla?.colour || null,
     yearOfManufacture: dvla?.yearOfManufacture || null,
     fuelType: dvla?.fuelType || null,
+    fuel_type: derivedFuelType,
+    fuel_category,
+
     engineCapacity: dvla?.engineCapacity || null,
     co2Emissions: dvla?.co2Emissions || null,
     taxStatus: dvla?.taxStatus || null,
