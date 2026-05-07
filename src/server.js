@@ -17,6 +17,7 @@ const pagesRouter = require('./routes/pages');
 const tripRouter = require('./routes/trip');
 const vehiclesRouter = require('./routes/vehicles');
 const diagnosticsRouter = require('./routes/diagnostics');
+const receiptsRouter = require('./routes/receipts');
 const errorHandler = require('./middleware/errorHandler');
 const notFound = require('./middleware/notFound');
 const { generalLimiter, createRateLimiter } = require('./middleware/rateLimiter');
@@ -96,6 +97,9 @@ async function start() {
   // Diagnostics uses its own limiter (10 req / 15 min) so oncall polling
   // doesn't eat into the general API budget.
   app.use('/api/v1/diagnostics', createRateLimiter(10), diagnosticsRouter);
+
+  // Receipt OCR + ground-truth (Phase 2B) — anonymous, own rate limiting
+  app.use('/api/v1/receipts', receiptsRouter);
 
   // Public pages (privacy, support)
   app.use(pagesRouter);
