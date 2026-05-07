@@ -14,6 +14,7 @@ const { getPool } = require('../config/db');
 const { runBackfillQuarantine } = require('../jobs/backfillQuarantine');
 const vehicleSpecService = require('../services/vehicleSpecService');
 const dvsaService = require('../services/dvsaService');
+const { getGroundTruthStats } = require('../repositories/groundtruthRepository');
 
 function buildVehicleMotDiagnostics() {
   const flagEnabled = dvsaService.isConfigured();
@@ -414,6 +415,31 @@ router.post('/backfill-quarantine', async (req, res, next) => {
     next(err);
   }
 });
+
+/**
+ * GET /api/v1/diagnostics/groundtruth
+ * Returns aggregate counts for the receipt_groundtruth table.
+ * For ops to verify data is flowing from the Phase 2B ingestion pipeline.
+ */
+router.get('/groundtruth', async (req, res, next) => {
+  try {
+    const stats = await getGroundTruthStats();
+    return res.json(stats);
+  } catch (err) {
+    // Table may not exist yet on a fresh DB — return zeros rather than 500
+    if (err.code === '42P01') {
+      return res.json({
+        total: 0,
+        last_24h: 0,
+        last_7d: 0,
+        by_brand: {},
+        by_outcode_top10: [],
+      });
+    }
+    return next(err);
+  }
+});
+
 
 module.exports = router;
 module.exports._deriveStatus = deriveStatus;

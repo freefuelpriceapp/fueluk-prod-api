@@ -385,6 +385,32 @@ async function runMigrations() {
      WHERE premium_diesel_price IS NOT NULL AND premium_diesel_updated_at IS NULL
   `);
 
+
+  // Phase 2B: receipt_groundtruth table
+  // Stores anonymous opt-in ground-truth price data from user receipts.
+  // No device ID, no IP stored — privacy-first.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS receipt_groundtruth (
+      id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      brand           VARCHAR(100) NOT NULL,
+      postcode_outcode VARCHAR(10) NOT NULL,
+      p_per_l         DECIMAL(6,1) NOT NULL,
+      fuel_type       VARCHAR(30) NOT NULL,
+      receipt_date    DATE NOT NULL,
+      ingested_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      source          VARCHAR(30) NOT NULL DEFAULT 'user_receipt'
+    );
+  `);
+  // Index for aggregation queries by outcode + fuel_type + date
+  await pool.query(
+    \`CREATE INDEX IF NOT EXISTS idx_rgt_outcode_fuel_date
+       ON receipt_groundtruth(postcode_outcode, fuel_type, receipt_date DESC)\`
+  );
+  // Index for time-based aggregation (diagnostics last_24h / last_7d)
+  await pool.query(
+    \`CREATE INDEX IF NOT EXISTS idx_rgt_ingested_at ON receipt_groundtruth(ingested_at DESC)\`
+  );
+
   console.log('DB migrations complete.');
 }
 
