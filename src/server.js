@@ -19,6 +19,7 @@ const vehiclesRouter = require('./routes/vehicles');
 const diagnosticsRouter = require('./routes/diagnostics');
 const receiptsRouter = require('./routes/receipts');
 const welcomeRouter = require('./routes/welcome');
+const configRouter = require('./routes/config');
 const errorHandler = require('./middleware/errorHandler');
 const notFound = require('./middleware/notFound');
 const { generalLimiter, createRateLimiter } = require('./middleware/rateLimiter');
@@ -104,6 +105,9 @@ async function start() {
 
   // Wave A.9 — Welcome flow savings estimate
   app.use('/api/v1/welcome', welcomeRouter);
+
+  // Wave A.9 — Remote config flags (kill-switches)
+  app.use('/api/v1/config', configRouter);
 
   // Public pages (privacy, support)
   app.use(pagesRouter);
