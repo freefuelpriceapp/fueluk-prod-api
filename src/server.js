@@ -18,6 +18,7 @@ const tripRouter = require('./routes/trip');
 const vehiclesRouter = require('./routes/vehicles');
 const diagnosticsRouter = require('./routes/diagnostics');
 const receiptsRouter = require('./routes/receipts');
+const welcomeRouter = require('./routes/welcome');
 const errorHandler = require('./middleware/errorHandler');
 const notFound = require('./middleware/notFound');
 const { generalLimiter, createRateLimiter } = require('./middleware/rateLimiter');
@@ -100,6 +101,9 @@ async function start() {
 
   // Receipt OCR + ground-truth (Phase 2B) — anonymous, own rate limiting
   app.use('/api/v1/receipts', receiptsRouter);
+
+  // Wave A.9 — Welcome flow savings estimate
+  app.use('/api/v1/welcome', welcomeRouter);
 
   // Public pages (privacy, support)
   app.use(pagesRouter);
