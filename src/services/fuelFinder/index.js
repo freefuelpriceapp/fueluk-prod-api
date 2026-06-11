@@ -51,13 +51,52 @@ async function runStationSyncOnce() {
   }
   runningStations = true;
   try {
-    return await syncStations({ apiClient: getApiClient() });
+    const summary = await syncStations({ apiClient: getApiClient() });
+    return { ok: true, summary };
   } catch (err) {
-    console.error('[FuelFinder] Station sync errored:', err.message);
-    return { error: err.message };
+    const detail = serialiseError(err);
+    console.error('[FuelFinder] Station sync errored:', JSON.stringify(detail));
+    return { ok: false, error: detail };
   } finally {
     runningStations = false;
   }
+}
+
+/**
+ * Serialise an arbitrary error (including axios errors) into a structured
+ * shape we can return over HTTP for diagnostics. Captures the upstream
+ * status + response body when present so we can see WHY Fuel Finder is
+ * rejecting us, not just "Network Error".
+ */
+function serialiseError(err) {
+  if (!err) return { message: 'unknown' };
+  const out = {
+    message: err.message || String(err),
+    name: err.name || null,
+    code: err.code || null,
+  };
+  if (err.response) {
+    out.upstream = {
+      status: err.response.status,
+      statusText: err.response.statusText,
+      // Truncate body so we don't dump 10MB of HTML in the response.
+      body: typeof err.response.data === 'string'
+        ? err.response.data.slice(0, 2000)
+        : err.response.data,
+      headers: err.response.headers ? {
+        'content-type': err.response.headers['content-type'] || null,
+        'www-authenticate': err.response.headers['www-authenticate'] || null,
+      } : null,
+    };
+  }
+  if (err.config) {
+    out.request = {
+      method: err.config.method,
+      url: err.config.url,
+      params: err.config.params || null,
+    };
+  }
+  return out;
 }
 
 async function runPriceSyncOnce() {
@@ -67,10 +106,12 @@ async function runPriceSyncOnce() {
   }
   runningPrices = true;
   try {
-    return await syncPrices({ apiClient: getApiClient() });
+    const summary = await syncPrices({ apiClient: getApiClient() });
+    return { ok: true, summary };
   } catch (err) {
-    console.error('[FuelFinder] Price sync errored:', err.message);
-    return { error: err.message };
+    const detail = serialiseError(err);
+    console.error('[FuelFinder] Price sync errored:', JSON.stringify(detail));
+    return { ok: false, error: detail };
   } finally {
     runningPrices = false;
   }
@@ -128,4 +169,5 @@ module.exports = {
   runPriceSyncOnce,
   isFlagEnabled,
   hasCredentials,
+  serialiseError,
 };
