@@ -17,9 +17,34 @@ function isPostcodeLike(s) {
   return /^[A-Z]{1,2}\d[A-Z\d]?\s*\d?[A-Z]{0,2}$/i.test(String(s).trim());
 }
 
+// Freshness window for cheapest-price ranking. Prices older than this fall
+// to NULLS LAST in the sort, so a 5-week-stale 135p Applegreen row never
+// outranks a fresh 154p Asda row. Keeps the cheapest list factually credible.
+const CHEAPEST_FRESHNESS_DAYS = 7;
+
 async function getNearbyStations({ lat, lng, radiusKm = 5, fuel = 'petrol', limit = 50, brand = null, orderBy = 'distance' }) {
   const pool = getPool();
   const radiusM = radiusKm * 1000;
+  // For "petrol" (unleaded), supermarkets fill e10_price and not petrol_price,
+  // while non-supermarket brands typically fill petrol_price. Rank by the
+  // cheaper of the two so supermarket E10 wins on price as expected.
+  // For diesel / e10 the column is unambiguous.
+  const priceExpr = fuel === 'diesel'
+    ? 'diesel_price'
+    : fuel === 'e10'
+      ? 'e10_price'
+      : 'LEAST(NULLIF(petrol_price, 0), NULLIF(e10_price, 0))';
+  const tsExpr = fuel === 'diesel'
+    ? 'diesel_updated_at'
+    : fuel === 'e10'
+      ? 'e10_updated_at'
+      : 'GREATEST(petrol_updated_at, e10_updated_at)';
+  // Stale prices are pushed to the end of the cheapest sort.
+  const freshPriceExpr =
+    `CASE WHEN ${tsExpr} IS NOT NULL
+            AND ${tsExpr} > NOW() - INTERVAL '${CHEAPEST_FRESHNESS_DAYS} days'
+          THEN ${priceExpr}
+          ELSE NULL END`;
   const fuelCol = fuel === 'diesel' ? 'diesel_price' : fuel === 'e10' ? 'e10_price' : 'petrol_price';
   const params = [lat, lng, radiusM, limit];
   let brandFilter = '';
@@ -33,9 +58,10 @@ async function getNearbyStations({ lat, lng, radiusKm = 5, fuel = 'petrol', limi
       brandFilter = `AND REGEXP_REPLACE(UPPER(brand), '[^A-Z0-9]', '', 'g') IN (${placeholders})`;
     }
   }
-  // 'distance' (default) → closest first; 'price' → cheapest-for-fuel first, then closer tiebreak.
+  // 'distance' (default) → closest first; 'price' → cheapest-for-fuel first
+  // (freshness-gated), then closer tiebreak.
   const orderClause = orderBy === 'price'
-    ? `${fuelCol} ASC NULLS LAST, distance_m ASC`
+    ? `${freshPriceExpr} ASC NULLS LAST, distance_m ASC`
     : `distance_m ASC, ${fuelCol} ASC NULLS LAST`;
   const result = await pool.query(
     `SELECT id, brand, name, address, postcode, lat, lng,

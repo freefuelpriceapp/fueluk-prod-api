@@ -18,11 +18,23 @@ const { getPool } = require('../config/db');
  *
  * Sets *_source = 'scraped' on filled columns so the frontend can show
  * a (GOV) badge on gov-sourced prices.
+ *
+ * REFRESH POLICY (Wave A.10):
+ *  - Gap-fill: write only when target column is NULL. Default for petrolmap.
+ *  - Authoritative refresh: for sources flagged authoritative (e.g.
+ *    applegreen_official), overwrite the existing price IF the existing
+ *    *_source is the same authoritative source OR is NULL. This keeps the
+ *    Applegreen feed self-healing without clobbering gov data.
  */
 
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 const SCRAPE_TIMEOUT = 15000;
 const MAX_POSTCODES_PER_RUN = 80; // rate-limit safety
+
+// Sources whose data we treat as authoritative for that brand —
+// allowed to overwrite their own previously-written price columns so
+// stale rows get refreshed on every ingest run.
+const AUTHORITATIVE_SOURCES = new Set(['applegreen_official']);
 
 // --------------- Scrapers ---------------
 
@@ -160,14 +172,22 @@ async function fillMissingPrices() {
   console.log('[NonGov] Starting dynamic non-gov price fill...');
   let filled = 0;
 
-  // 1. Get ALL stations with any missing price
+  // 1. Get stations with missing prices OR stations whose existing prices
+  //    came from an authoritative non-gov feed (so we can refresh them).
+  const authSources = [...AUTHORITATIVE_SOURCES];
   const { rows: missing } = await pool.query(`
     SELECT id, brand, name, address, postcode,
-           petrol_price, diesel_price, e10_price
+           petrol_price, diesel_price, e10_price,
+           petrol_source, diesel_source, e10_source
     FROM stations
-    WHERE (petrol_price IS NULL OR diesel_price IS NULL OR e10_price IS NULL)
-      AND postcode IS NOT NULL AND postcode <> ''
-  `);
+    WHERE postcode IS NOT NULL AND postcode <> ''
+      AND (
+        petrol_price IS NULL OR diesel_price IS NULL OR e10_price IS NULL
+        OR petrol_source = ANY($1::text[])
+        OR diesel_source = ANY($1::text[])
+        OR e10_source    = ANY($1::text[])
+      )
+  `, [authSources]);
 
   if (missing.length === 0) {
     console.log('[NonGov] No missing prices found.');
@@ -231,15 +251,23 @@ async function fillMissingPrices() {
 
     // Require minimum confidence
     if (bestMatch && bestScore >= 4) {
-      if (!station.petrol_price && bestMatch.petrol) {
+      const isAuth = AUTHORITATIVE_SOURCES.has(bestMatch.source);
+
+      // For each fuel column, write if: (a) target is NULL, OR
+      // (b) scraper is authoritative AND existing source is the same
+      // authoritative source (or NULL). Never overwrite gov data.
+      const canWrite = (existingPrice, existingSource) =>
+        !existingPrice || (isAuth && (!existingSource || existingSource === bestMatch.source));
+
+      if (bestMatch.petrol && canWrite(station.petrol_price, station.petrol_source)) {
         updates.petrol_price = bestMatch.petrol;
         sources.petrol_price = bestMatch.source;
       }
-      if (!station.diesel_price && bestMatch.diesel) {
+      if (bestMatch.diesel && canWrite(station.diesel_price, station.diesel_source)) {
         updates.diesel_price = bestMatch.diesel;
         sources.diesel_price = bestMatch.source;
       }
-      if (!station.e10_price && bestMatch.e10) {
+      if (bestMatch.e10 && canWrite(station.e10_price, station.e10_source)) {
         updates.e10_price = bestMatch.e10;
         sources.e10_price = bestMatch.source;
       }
@@ -260,6 +288,9 @@ async function fillMissingPrices() {
         setParts.push(`${srcCol} = $${idx}`);
         values.push(sources[col] || 'scraped');
         idx++;
+        // And the per-fuel timestamp so freshness gating works
+        const tsCol = col.replace('_price', '_updated_at');
+        setParts.push(`${tsCol} = NOW()`);
       }
       setParts.push('last_updated = NOW()');
 
@@ -290,4 +321,4 @@ async function fillMissingPrices() {
   return { filled };
 }
 
-module.exports = { fillMissingPrices, scrapePetrolMap, scrapeApplegreen };
+module.exports = { fillMissingPrices, scrapePetrolMap, scrapeApplegreen, AUTHORITATIVE_SOURCES };
