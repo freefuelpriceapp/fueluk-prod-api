@@ -258,6 +258,26 @@ async function runMigrations() {
   // ALTER COLUMN TYPE on VARCHAR only raises the limit; no data rewrite.
   await pool.query(`ALTER TABLE stations ALTER COLUMN id TYPE VARCHAR(100)`);
 
+  // Sprint 15.1: Every FK referencing stations(id) was still VARCHAR(50).
+  // When Fuel Finder station IDs (67 chars) reach those tables, INSERTs
+  // failed with `value too long for type character varying(50)`. Most
+  // visibly: priceSync.js spamming CloudWatch with
+  //   `[FuelFinder] price_history insert failed for ff-…/diesel`
+  // every 5 minutes because the history insert is wrapped in a non-fatal
+  // try/catch — so the main UPDATE succeeded but no history row was
+  // ever written, and downstream tables (alerts, favourites, reports,
+  // non_gov_prices, flags, quarantine) would silently break for any
+  // Fuel-Finder-sourced station the moment a user touched them.
+  //
+  // Widen every station_id FK to match stations.id. ALTER COLUMN TYPE on
+  // VARCHAR only raises the limit, so this is a safe metadata change with
+  // no data rewrite and no downtime.
+  await pool.query(`ALTER TABLE price_history     ALTER COLUMN station_id TYPE VARCHAR(100)`);
+  await pool.query(`ALTER TABLE price_alerts      ALTER COLUMN station_id TYPE VARCHAR(100)`);
+  await pool.query(`ALTER TABLE user_favourites   ALTER COLUMN station_id TYPE VARCHAR(100)`);
+  await pool.query(`ALTER TABLE price_reports     ALTER COLUMN station_id TYPE VARCHAR(100)`);
+  await pool.query(`ALTER TABLE non_gov_prices    ALTER COLUMN station_id TYPE VARCHAR(100)`);
+
   // Fuel Finder sync state - tracks last successful price update timestamp
   // so incremental price fetches know where to resume from.
   await pool.query(`
@@ -344,6 +364,15 @@ async function runMigrations() {
     `CREATE INDEX IF NOT EXISTS idx_price_flag_quarantine_expires
        ON price_flag_quarantine(expires_at)`,
   );
+
+  // Sprint 15.1: price_flags/price_flag_quarantine were created after
+  // stations.id was widened, but their CREATE TABLE statements still pin
+  // station_id to VARCHAR(50). Widen them here so Fuel-Finder-sourced
+  // stations can be flagged/quarantined without tripping the same
+  // `value too long for type character varying(50)` error we hit in
+  // price_history.
+  await pool.query(`ALTER TABLE price_flags            ALTER COLUMN station_id TYPE VARCHAR(100)`);
+  await pool.query(`ALTER TABLE price_flag_quarantine  ALTER COLUMN station_id TYPE VARCHAR(100)`);
 
   // Wave A: per-field freshness timestamps. The shared stations.last_updated
   // column was being bumped on every upsert touching ANY column, so it could
