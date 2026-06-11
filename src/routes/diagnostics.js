@@ -15,6 +15,26 @@ const { runBackfillQuarantine } = require('../jobs/backfillQuarantine');
 const vehicleSpecService = require('../services/vehicleSpecService');
 const dvsaService = require('../services/dvsaService');
 const { getGroundTruthStats } = require('../repositories/groundtruthRepository');
+const fuelFinder = require('../services/fuelFinder');
+
+/**
+ * Shared admin-token guard for diagnostic POST endpoints. Returns true if
+ * the request is authorised; otherwise writes the appropriate HTTP error
+ * and returns false. Endpoint is disabled when ADMIN_API_TOKEN is unset.
+ */
+function requireAdminToken(req, res) {
+  const expected = process.env.ADMIN_API_TOKEN;
+  if (!expected) {
+    res.status(503).json({ success: false, error: 'admin endpoint disabled' });
+    return false;
+  }
+  const got = req.get('X-Admin-Token');
+  if (!got || got !== expected) {
+    res.status(401).json({ success: false, error: 'unauthorized' });
+    return false;
+  }
+  return true;
+}
 
 function buildVehicleMotDiagnostics() {
   const flagEnabled = dvsaService.isConfigured();
@@ -401,16 +421,68 @@ router.get('/station/:id', async (req, res, next) => {
  */
 router.post('/backfill-quarantine', async (req, res, next) => {
   try {
-    const expected = process.env.ADMIN_API_TOKEN;
-    if (!expected) {
-      return res.status(503).json({ success: false, error: 'admin endpoint disabled' });
-    }
-    const got = req.get('X-Admin-Token');
-    if (!got || got !== expected) {
-      return res.status(401).json({ success: false, error: 'unauthorized' });
-    }
+    if (!requireAdminToken(req, res)) return;
     const summary = await runBackfillQuarantine();
     return res.json({ success: true, summary });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/v1/diagnostics/fuel-finder/run-price-sync
+ * POST /api/v1/diagnostics/fuel-finder/run-station-sync
+ *
+ * On-demand triggers for the Fuel Finder ingestion jobs. Returns the full
+ * structured result, including any upstream HTTP status / response body if
+ * the job failed — so we can see WHY price sync isn't writing prices,
+ * rather than only seeing `last_fuel_finder_price_sync: null` in /diagnostics.
+ *
+ * Requires X-Admin-Token; disabled when ADMIN_API_TOKEN is unset. Reports
+ * 503 if FEATURE_FUEL_FINDER is off or credentials are missing, so the
+ * response itself tells you what's wrong with the runtime config.
+ */
+router.post('/fuel-finder/run-price-sync', async (req, res, next) => {
+  try {
+    if (!requireAdminToken(req, res)) return;
+    if (!fuelFinder.isFlagEnabled()) {
+      return res.status(503).json({
+        success: false,
+        error: 'FEATURE_FUEL_FINDER is not enabled in this environment',
+      });
+    }
+    if (!fuelFinder.hasCredentials()) {
+      return res.status(503).json({
+        success: false,
+        error: 'FUEL_FINDER_CLIENT_ID / FUEL_FINDER_CLIENT_SECRET missing',
+      });
+    }
+    const result = await fuelFinder.runPriceSyncOnce();
+    const statusCode = result && result.ok === false ? 502 : 200;
+    return res.status(statusCode).json({ success: result.ok !== false, result });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/fuel-finder/run-station-sync', async (req, res, next) => {
+  try {
+    if (!requireAdminToken(req, res)) return;
+    if (!fuelFinder.isFlagEnabled()) {
+      return res.status(503).json({
+        success: false,
+        error: 'FEATURE_FUEL_FINDER is not enabled in this environment',
+      });
+    }
+    if (!fuelFinder.hasCredentials()) {
+      return res.status(503).json({
+        success: false,
+        error: 'FUEL_FINDER_CLIENT_ID / FUEL_FINDER_CLIENT_SECRET missing',
+      });
+    }
+    const result = await fuelFinder.runStationSyncOnce();
+    const statusCode = result && result.ok === false ? 502 : 200;
+    return res.status(statusCode).json({ success: result.ok !== false, result });
   } catch (err) {
     next(err);
   }
