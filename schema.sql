@@ -3,7 +3,7 @@ CREATE EXTENSION IF NOT EXISTS postgis;
 
 -- Stations table
 CREATE TABLE IF NOT EXISTS stations (
-  id VARCHAR(50) PRIMARY KEY,
+  id VARCHAR(100) PRIMARY KEY,  -- widened from 50 for Fuel Finder IDs (`ff-` + 64-char node_id)
   brand VARCHAR(100),
   name VARCHAR(200),
   address VARCHAR(300),
@@ -54,7 +54,7 @@ CREATE TRIGGER trigger_update_location
 -- Sprint 2: Price history table for trend data
 CREATE TABLE IF NOT EXISTS price_history (
   id           BIGSERIAL PRIMARY KEY,
-  station_id   VARCHAR(50) NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
+  station_id   VARCHAR(100) NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
   fuel_type    VARCHAR(10) NOT NULL,
   price_pence  DECIMAL(6, 1),
   source       VARCHAR(30) DEFAULT 'gov',
@@ -79,7 +79,7 @@ CREATE INDEX IF NOT EXISTS idx_price_history_station_id
 -- Sprint 3: Price alerts table
 CREATE TABLE IF NOT EXISTS price_alerts (
   id                BIGSERIAL PRIMARY KEY,
-  station_id        VARCHAR(50) NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
+  station_id        VARCHAR(100) NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
   fuel_type         VARCHAR(10) NOT NULL,
   threshold_pence   DECIMAL(6, 1) NOT NULL,
   device_token      VARCHAR(500) NOT NULL,
@@ -108,7 +108,7 @@ CREATE INDEX IF NOT EXISTS idx_alerts_station_fuel ON price_alerts(station_id, f
 CREATE TABLE IF NOT EXISTS user_favourites (
   id           BIGSERIAL PRIMARY KEY,
   device_token VARCHAR(500) NOT NULL,
-  station_id   VARCHAR(50) NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
+  station_id   VARCHAR(100) NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
   created_at   TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
@@ -147,7 +147,7 @@ CREATE INDEX IF NOT EXISTS idx_premium_users_expires_at
 -- Sprint 13: Non-gov price sources for supplementary data
 CREATE TABLE IF NOT EXISTS non_gov_prices (
   id            BIGSERIAL PRIMARY KEY,
-  station_id    VARCHAR(50) NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
+  station_id    VARCHAR(100) NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
   fuel_type     VARCHAR(10) NOT NULL,
   price_pence   DECIMAL(6, 1),
   source        VARCHAR(100) NOT NULL,
