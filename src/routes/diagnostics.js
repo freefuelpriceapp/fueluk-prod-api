@@ -16,6 +16,7 @@ const vehicleSpecService = require('../services/vehicleSpecService');
 const dvsaService = require('../services/dvsaService');
 const { getGroundTruthStats } = require('../repositories/groundtruthRepository');
 const fuelFinder = require('../services/fuelFinder');
+const { cleanupLegacyStationRows } = require('../services/legacyStationCleanupService');
 
 /**
  * Shared admin-token guard for diagnostic POST endpoints. Returns true if
@@ -483,6 +484,31 @@ router.post('/fuel-finder/run-station-sync', async (req, res, next) => {
     const result = await fuelFinder.runStationSyncOnce();
     const statusCode = result && result.ok === false ? 502 : 200;
     return res.status(statusCode).json({ success: result.ok !== false, result });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/v1/diagnostics/cleanup-legacy-stations
+ *
+ * One-shot cleanup of the legacy `gcqd-*` (source='gov') and
+ * `applegreen_official` rows in the stations table. Writers were turned
+ * off in PR #42 (2026-06-15); this endpoint deletes what they left behind.
+ *
+ * Runs inside a single transaction with FK cascades on price_history,
+ * price_alerts, user_favourites, non_gov_prices. Idempotent — a second
+ * call deletes 0 rows. Pre/post counts returned in the response so the
+ * caller can audit exactly what changed.
+ *
+ * Requires X-Admin-Token; 503 when ADMIN_API_TOKEN is unset. The RDS
+ * snapshot `pre-gov-cleanup-2026-06-15` is the rollback point.
+ */
+router.post('/cleanup-legacy-stations', async (req, res, next) => {
+  try {
+    if (!requireAdminToken(req, res)) return;
+    const summary = await cleanupLegacyStationRows();
+    return res.json({ success: true, summary });
   } catch (err) {
     next(err);
   }
