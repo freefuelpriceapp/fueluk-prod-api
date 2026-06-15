@@ -24,7 +24,11 @@ const errorHandler = require('./middleware/errorHandler');
 const notFound = require('./middleware/notFound');
 const { generalLimiter, createRateLimiter } = require('./middleware/rateLimiter');
 const apiVersionMiddleware = require('./middleware/apiVersion');
-const { scheduleFuelSync } = require('./services/govFuelData');
+// scheduleFuelSync from govFuelData retired 2026-06-15 — see comment
+// below at the boot-time job startup. Fuel Finder is now the single
+// source of station/price truth; the module file is kept for now in case
+// we want to reactivate it for a specific brand-direct fallback later.
+// const { scheduleFuelSync } = require('./services/govFuelData');
 const { scheduleFuelFinder } = require('./services/fuelFinder');
 const { startIngestRunner } = require('./jobs/ingestRunner');
 const { startAlertJob } = require('./jobs/alertJob');
@@ -121,8 +125,17 @@ async function start() {
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 
-    // Start background jobs
-    scheduleFuelSync();
+    // Start background jobs.
+    //
+    // 2026-06-15: retired scheduleFuelSync() (old brand-direct JSON scraper)
+    // and the nonGov Applegreen HTML scraper. Fuel Finder is now the single
+    // source of truth for station/price data — anything else just creates
+    // duplicate rows in the stations table, which is exactly what produced
+    // the Birmingham 135.8p Applegreen ghosts the mobile app had to route
+    // around. startIngestRunner() still fires every 6h but now only writes
+    // price_history snapshots from the Fuel-Finder-populated stations table.
+    //
+    // scheduleFuelSync();   // REMOVED — replaced by scheduleFuelFinder()
     scheduleFuelFinder();
     startIngestRunner();
     startAlertJob();

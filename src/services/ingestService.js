@@ -1,16 +1,21 @@
 'use strict';
-const { syncFuelData } = require('./govFuelData');
 const { getPool } = require('../config/db');
-const { fillMissingPrices } = require('./nonGovFuelData');
 const { clearCache } = require('../middleware/responseCache');
 
 /**
  * ingestService.js — Sprint 2 + Sprint 4 update
- * Orchestrates the full ingest cycle:
- *   1. Pull latest prices from all brand endpoints (govFuelData)
- *   2. Snapshot changed prices into price_history (fuel_type/price_pence rows)
  *
- * Called by ingestRunner (cron) and optionally by an admin trigger endpoint.
+ * 2026-06-15 update: Fuel Finder is now the single source of truth for
+ * station and price data. The old brand-direct govFuelData scraper and the
+ * non-gov Applegreen HTML scraper have been retired — they produced
+ * duplicate rows in the `stations` table (gcqd-* alongside ff-*) and stamped
+ * `last_updated = NOW()` on dead rows, which is what surfaced the Birmingham
+ * 135.8p Applegreen ghosts on /stations/cheapest.
+ *
+ * runFullIngest() now only writes price_history snapshots from whatever
+ * Fuel Finder has already populated into the stations table. Fuel Finder's
+ * own scheduler (scheduleFuelFinder in server.js) handles the actual price
+ * ingestion every hour.
  */
 
 /**
@@ -47,35 +52,17 @@ async function snapshotPriceHistory() {
  */
 async function runFullIngest() {
   const startedAt = new Date();
-  console.log(`[IngestService] Starting full ingest at ${startedAt.toISOString()}`);
+  console.log(`[IngestService] Starting price_history snapshot at ${startedAt.toISOString()}`);
 
-  let syncResult = { totalUpserted: 0, errors: [] };
+  const errors = [];
   let snapshotRows = 0;
-
-  try {
-    syncResult = await syncFuelData();
-    console.log(`[IngestService] syncFuelData complete — upserted ${syncResult.totalUpserted} stations`);
-  } catch (err) {
-    console.error('[IngestService] syncFuelData failed:', err.message);
-    syncResult.errors.push({ phase: 'sync', message: err.message });
-  }
-
-    // Step 1b: Fill missing prices from non-gov sources (e.g. PetrolMap scraping)
-  let fillResult = { filled: 0 };
-  try {
-    fillResult = await fillMissingPrices();
-    console.log(`[IngestService] fillMissingPrices complete – ${fillResult.filled} stations patched`);
-  } catch (err) {
-    console.error('[IngestService] fillMissingPrices failed:', err.message);
-    syncResult.errors.push({ phase: 'fillMissing', message: err.message });
-  }
 
   try {
     snapshotRows = await snapshotPriceHistory();
     console.log(`[IngestService] snapshotPriceHistory complete — ${snapshotRows} rows written`);
   } catch (err) {
     console.error('[IngestService] snapshotPriceHistory failed:', err.message);
-    syncResult.errors.push({ phase: 'snapshot', message: err.message });
+    errors.push({ phase: 'snapshot', message: err.message });
   }
 
   const finishedAt = new Date();
@@ -85,25 +72,23 @@ async function runFullIngest() {
     startedAt: startedAt.toISOString(),
     finishedAt: finishedAt.toISOString(),
     durationMs,
-    stationsUpserted: syncResult.totalUpserted,
+    stationsUpserted: 0, // retired — Fuel Finder owns ingestion
     historyRowsWritten: snapshotRows,
-        stationsPatched: fillResult.filled,
-    errors: syncResult.errors,
+    stationsPatched: 0,  // retired — non-gov scraper killed 2026-06-15
+    errors,
   };
 
-  // Invalidate the response cache so users see the fresh prices immediately.
-  // Only clear when at least one upstream step succeeded; a total-failure run
-  // would otherwise evict a warm cache for no benefit.
-  if (syncResult.totalUpserted > 0 || fillResult.filled > 0 || snapshotRows > 0) {
+  // Invalidate the response cache only if we actually wrote new history rows.
+  if (snapshotRows > 0) {
     try {
       clearCache();
-      console.log('[IngestService] Response cache cleared post-ingest');
+      console.log('[IngestService] Response cache cleared post-snapshot');
     } catch (err) {
       console.error('[IngestService] clearCache failed:', err.message);
     }
   }
 
-  console.log('[IngestService] Ingest complete:', JSON.stringify(summary));
+  console.log('[IngestService] Snapshot run complete:', JSON.stringify(summary));
   return summary;
 }
 
