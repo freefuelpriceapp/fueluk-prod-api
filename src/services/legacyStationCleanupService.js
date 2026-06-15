@@ -13,9 +13,14 @@ const { getPool } = require('../config/db');
  * Why this exists
  * ---------------
  * The `stations` table was being written by three jobs:
- *   1. Fuel Finder (statutory feed)        — `ff-*` ids, source NULL
- *   2. scheduleFuelSync (brand JSON URLs)  — `gcqd-*` ids, source='gov'
- *   3. nonGovFuelData scraper              — source='applegreen_official' (18 rows)
+ *   1. Fuel Finder (statutory feed)        — `ff-*` ids, petrol_source NULL
+ *   2. scheduleFuelSync (brand JSON URLs)  — `gcqd-*` ids, petrol_source='gov'
+ *   3. nonGovFuelData scraper              — petrol_source='applegreen_official' (18 rows)
+ *
+ * Note: the `stations` table has per-fuel source columns
+ * (petrol_source / diesel_source / e10_source) rather than a top-level
+ * source column. We key off petrol_source because it's the only column
+ * populated by every writer.
  *
  * Jobs 2 and 3 produced duplicate forecourts of Fuel Finder's data, with
  * the 2-hour gov sync stamping last_updated = NOW() on every upsert. This
@@ -61,8 +66,8 @@ async function cleanupLegacyStationRows() {
     const beforeRow = await client.query(`
       SELECT
         COUNT(*) FILTER (WHERE TRUE)                                              AS total,
-        COUNT(*) FILTER (WHERE id LIKE 'gcqd%' OR source = 'gov')                 AS gcqd,
-        COUNT(*) FILTER (WHERE source = 'applegreen_official')                    AS applegreen_official
+        COUNT(*) FILTER (WHERE id LIKE 'gcqd%' OR petrol_source = 'gov')          AS gcqd,
+        COUNT(*) FILTER (WHERE petrol_source = 'applegreen_official')             AS applegreen_official
       FROM stations
     `);
     const before = {
@@ -78,15 +83,15 @@ async function cleanupLegacyStationRows() {
       SELECT
         (SELECT COUNT(*) FROM user_favourites WHERE station_id IN (
             SELECT id FROM stations
-            WHERE id LIKE 'gcqd%' OR source IN ('gov', 'applegreen_official')
+            WHERE id LIKE 'gcqd%' OR petrol_source IN ('gov', 'applegreen_official')
         )) AS uf,
         (SELECT COUNT(*) FROM price_alerts WHERE station_id IN (
             SELECT id FROM stations
-            WHERE id LIKE 'gcqd%' OR source IN ('gov', 'applegreen_official')
+            WHERE id LIKE 'gcqd%' OR petrol_source IN ('gov', 'applegreen_official')
         )) AS pa,
         (SELECT COUNT(*) FROM price_history WHERE station_id IN (
             SELECT id FROM stations
-            WHERE id LIKE 'gcqd%' OR source IN ('gov', 'applegreen_official')
+            WHERE id LIKE 'gcqd%' OR petrol_source IN ('gov', 'applegreen_official')
         )) AS ph
     `;
     const collateral = await client.query(collateralQuery);
@@ -94,12 +99,13 @@ async function cleanupLegacyStationRows() {
     const priceAlertsCollateral = Number(collateral.rows[0].pa);
     const priceHistoryCollateral = Number(collateral.rows[0].ph);
 
-    // 3. Delete gcqd-* rows. We match on BOTH the id prefix AND source='gov'
-    //    so we catch any stragglers that had their id mangled but kept the
-    //    source label, or vice versa. Cascades drop child rows.
+    // 3. Delete gcqd-* rows. We match on BOTH the id prefix AND
+    //    petrol_source='gov' so we catch any stragglers that had their
+    //    id mangled but kept the source label, or vice versa. Cascades
+    //    drop child rows.
     const gcqdDelete = await client.query(`
       DELETE FROM stations
-      WHERE id LIKE 'gcqd%' OR source = 'gov'
+      WHERE id LIKE 'gcqd%' OR petrol_source = 'gov'
     `);
     const gcqdRowsDeleted = gcqdDelete.rowCount || 0;
 
@@ -109,7 +115,7 @@ async function cleanupLegacyStationRows() {
     //    fuel taxonomy (unleaded == E10 or E5/petrol).
     const agoDelete = await client.query(`
       DELETE FROM stations
-      WHERE source = 'applegreen_official'
+      WHERE petrol_source = 'applegreen_official'
     `);
     const applegreenOfficialRowsDeleted = agoDelete.rowCount || 0;
 
@@ -117,8 +123,8 @@ async function cleanupLegacyStationRows() {
     const afterRow = await client.query(`
       SELECT
         COUNT(*) FILTER (WHERE TRUE)                                              AS total,
-        COUNT(*) FILTER (WHERE id LIKE 'gcqd%' OR source = 'gov')                 AS gcqd,
-        COUNT(*) FILTER (WHERE source = 'applegreen_official')                    AS applegreen_official
+        COUNT(*) FILTER (WHERE id LIKE 'gcqd%' OR petrol_source = 'gov')          AS gcqd,
+        COUNT(*) FILTER (WHERE petrol_source = 'applegreen_official')             AS applegreen_official
       FROM stations
     `);
     const after = {
