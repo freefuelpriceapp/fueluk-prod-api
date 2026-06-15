@@ -87,8 +87,8 @@ test('cleanupLegacyStationRows deletes gcqd-* and applegreen_official inside a t
   const sqls = pool.queries.map((q) => q.sql);
   assert.equal(sqls[0], 'BEGIN');
   assert.equal(sqls[sqls.length - 1], 'COMMIT');
-  assert.match(sqls[3], /DELETE FROM stations\s+WHERE id LIKE 'gcqd%' OR source = 'gov'/);
-  assert.match(sqls[4], /DELETE FROM stations\s+WHERE source = 'applegreen_official'/);
+  assert.match(sqls[3], /DELETE FROM stations\s+WHERE id LIKE 'gcqd%' OR petrol_source = 'gov'/);
+  assert.match(sqls[4], /DELETE FROM stations\s+WHERE petrol_source = 'applegreen_official'/);
 });
 
 test('cleanupLegacyStationRows is idempotent: a second run deletes 0 rows and still commits', async () => {
